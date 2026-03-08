@@ -1,51 +1,39 @@
+# MeowTime
 
-# MeowTime: Timekeeping with a Purr-pose 🕒🐾
+MeowTime 是一个基于 Jetpack Compose 的全屏翻页时钟 App，主打高颜值桌面时钟体验和可调节视觉效果。
 
-Welcome to **MeowTime**, the app that combines sleek timekeeping with an irresistible feline twist! Whether you're a cat lover, design enthusiast, or just someone who needs a stylish clock, MeowTime has you covered. Oh, and did we mention it helps you summon your cat? 😸
+## App Screenshot
+![MeowTime Screenshot](./docs/images/app-screenshot.png)
 
-## App Preview ![MeowTime Screenshot](./app/src/main/ic_launcher-playstore.png)
+## Current Features
 
-## 🌟 Features That Set MeowTime Apart:
+1. Flip Clock 动效：小时、分钟、秒钟翻页动画。
+2. 12/24 小时制切换：可在设置中实时切换。
+3. 动态壁纸：按时间段切换早晨/下午/夜间背景。
+4. 防烧屏保护：定时微位移与亮度策略。
+5. 陀螺仪 3D 视差：可开关。
+6. 粒子背景特效：可开关。
+7. 字体切换：内置多种本地字体（不依赖 Google 服务）。
+8. 位置信息显示：优先设备定位，失败时走 HTTPS IP 兜底。
+9. 电量状态显示：顶部电量图标与数值。
+10. 猫咪音效按钮：右下角猫猫按钮播放音效。
+11. 设置持久化：主要开关和字体会保存在 DataStore。
+12. 中文文案支持：已提供 `values-zh-rCN` 资源。
 
-### 1. **Flip Clock Animation**
-Experience the hypnotic charm of flipping digits. Hours, minutes, and seconds transition smoothly, making you enjoy every passing moment (literally).
+## Tech Stack
 
-### 2. **Dynamic Backgrounds**
-Time isn’t static, and neither is MeowTime. The background adapts to the time of day:
-- **Morning Bliss 🌅**: Start your day with warm sunrise vibes.
-- **Afternoon Brightness 🌞**: Keep calm with a soothing daylight backdrop.
-- **Evening Serenity 🌌**: Wind down with tranquil starry skies.
+- Kotlin
+- Jetpack Compose (Material 3)
+- Android ViewModel + StateFlow
+- DataStore Preferences
 
-### 3. **Dynamic Offset Anti-Burn-In Technology 🖥️**
-Afraid of screen burn-in? Don’t worry! MeowTime takes screen protection seriously. Our **dynamic offset animations** ensure that clock elements subtly shift positions over time, preventing screen burn-in while maintaining a stylish and modern look.
+## Build & Run
 
-### 4. **AM/PM Display**
-Is it morning or evening? MeowTime’s clear **AM/PM indicator** makes sure you always know where you are in the rhythm of your day.
+```bash
+./gradlew assembleDebug
+./gradlew installDebug
+```
 
-### 5. **Real-Time Battery Status 🔋**
-MeowTime doesn’t just tell time—it keeps you informed. Check your battery level at a glance with an elegant visual indicator.
+## Version
 
-### 6. **Location-Based Greetings 📍**
-Wondering where you are? (No judgment!) MeowTime greets you with your current city and country, making you feel at home wherever you are.
-
-### 7. **Date & Day Display 📅**
-Never lose track of the day! MyTime highlights the current date and even reminds you which day of the week it is
-
-### 8. **Cat-Calling Audio Button 🎵🐈**
-This is where things get *meow-nificent*! Tap the **cat icon** button to play a **realistic cat meow sound**. It’s perfect for:
-- Summoning your furry friend to snuggle before bedtime.
-- Entertaining your cat (or yourself) with a playful meow.
-- Impressing your friends with your clock’s unexpected *catitude*.
-
-### 9. **Dark Mode Magic 🌑**
-For night owls (human or feline), MeowTime features a sleek dark mode that’s easy on the eyes and pawsitively stunning.
-
-## 🛠️ Tech That Makes the Magic Happen:
-- **Kotlin & Jetpack Compose**: Cutting-edge tools for smooth performance.
-- **Geocoder Wizardry**: Converts boring coordinates into location awesomeness.
-- **Battery Listener**: Keeps you informed about your device’s energy.
-- **Dynamic Offset Animation**: Protects your screen while looking fabulous.
-- **Feline Audio Fun**: Perfectly tuned meow sounds for maximum cat-attraction potential.
-
-## 🚀 Why Wait? Get MeowTime Now!
-With MeowTime, you don’t just track time—you make memories, summon cats, and enjoy life with a touch of whimsy. Clone it, install it, and bring your furry friend closer today.
+- Current app version: `1.1`
