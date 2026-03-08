@@ -25,6 +25,9 @@ data class ClockState(
     // 酷炫效果开关
     val isParallaxEnabled: Boolean = true,
     val isParticleSystemEnabled: Boolean = false,
+    val isParticleWeatherAuto: Boolean = true,
+    val particleWeather: ParticleWeather = ParticleWeather.SNOW,
+    val isCatSystemEnabled: Boolean = true,
     val isDynamicWallpaperEnabled: Boolean = true,
     val is24HourFormat: Boolean = true,
     

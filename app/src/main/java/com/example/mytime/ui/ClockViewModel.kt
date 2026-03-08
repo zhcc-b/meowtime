@@ -57,9 +57,11 @@ private object PreferenceKeys {
     val soundButton = booleanPreferencesKey("sound_button")
     val parallax = booleanPreferencesKey("parallax")
     val particles = booleanPreferencesKey("particles")
+    val cats = booleanPreferencesKey("cats")
     val dynamicWallpaper = booleanPreferencesKey("dynamic_wallpaper")
     val is24Hour = booleanPreferencesKey("is_24_hour")
     val selectedFont = stringPreferencesKey("selected_font")
+    val particleWeatherMode = stringPreferencesKey("particle_weather_mode")
 }
 
 class ClockViewModel(application: Application) : AndroidViewModel(application), SensorEventListener {
@@ -108,11 +110,16 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                 _uiState.update { state ->
                     val selectedFontName = preferences[PreferenceKeys.selectedFont]
                     val selectedFont = AvailableClockFonts.find { it.name == selectedFontName } ?: state.selectedFont
+                    val weatherMode = preferences[PreferenceKeys.particleWeatherMode] ?: "AUTO"
+                    val manualWeather = runCatching { ParticleWeather.valueOf(weatherMode) }.getOrNull()
                     state.copy(
                         isBurnInProtectionEnabled = preferences[PreferenceKeys.burnIn] ?: state.isBurnInProtectionEnabled,
                         isSoundButtonVisible = preferences[PreferenceKeys.soundButton] ?: state.isSoundButtonVisible,
                         isParallaxEnabled = preferences[PreferenceKeys.parallax] ?: state.isParallaxEnabled,
                         isParticleSystemEnabled = preferences[PreferenceKeys.particles] ?: state.isParticleSystemEnabled,
+                        isParticleWeatherAuto = manualWeather == null,
+                        particleWeather = manualWeather ?: state.particleWeather,
+                        isCatSystemEnabled = preferences[PreferenceKeys.cats] ?: state.isCatSystemEnabled,
                         isDynamicWallpaperEnabled = preferences[PreferenceKeys.dynamicWallpaper] ?: state.isDynamicWallpaperEnabled,
                         is24HourFormat = preferences[PreferenceKeys.is24Hour] ?: state.is24HourFormat,
                         selectedFont = selectedFont
@@ -125,10 +132,26 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private fun startClockTicker() {
         viewModelScope.launch(Dispatchers.Default) {
             var lastMinute = -1
+            var nextWeatherChangeEpochSec = 0L
+            var activeWeather = _uiState.value.particleWeather
             while (isActive) {
                 val now = ZonedDateTime.now()
                 val currentMinute = now.minute
                 val hour24 = now.hour
+                val nowEpochSec = now.toEpochSecond()
+                val weatherAuto = _uiState.value.isParticleWeatherAuto
+                if (weatherAuto) {
+                    if (activeWeather != _uiState.value.particleWeather) {
+                        activeWeather = _uiState.value.particleWeather
+                    }
+                    if (nextWeatherChangeEpochSec == 0L || nowEpochSec >= nextWeatherChangeEpochSec) {
+                        activeWeather = pickRandomWeather(excluding = activeWeather)
+                        nextWeatherChangeEpochSec = nowEpochSec + (8 * 60 * 60)
+                    }
+                } else {
+                    activeWeather = _uiState.value.particleWeather
+                    nextWeatherChangeEpochSec = nowEpochSec + (8 * 60 * 60)
+                }
 
                 _uiState.update { state ->
                     val burnInOffset = when {
@@ -159,6 +182,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         date = now.format(dateFormatter),
                         dayOfWeek = now.dayOfWeek.getDisplayName(TextStyle.FULL, locale),
                         backgroundRes = backgroundRes,
+                        particleWeather = if (state.isParticleWeatherAuto) activeWeather else state.particleWeather,
                         burnInOffset = burnInOffset
                     )
                 }
@@ -168,6 +192,11 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                 delay(1000)
             }
         }
+    }
+
+    private fun pickRandomWeather(excluding: ParticleWeather): ParticleWeather {
+        val options = ParticleWeather.entries.filter { it != excluding }
+        return options[random.nextInt(options.size)]
     }
 
     private fun getBackgroundForTime(hour: Int): Int = when (hour) {
@@ -297,6 +326,34 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     fun toggleParticles(enabled: Boolean) {
         _uiState.update { it.copy(isParticleSystemEnabled = enabled) }
         persistSetting { this[PreferenceKeys.particles] = enabled }
+    }
+
+    fun setParticleWeatherAuto(auto: Boolean) {
+        _uiState.update { state ->
+            if (auto) {
+                state.copy(
+                    isParticleWeatherAuto = true,
+                    particleWeather = pickRandomWeather(excluding = state.particleWeather)
+                )
+            } else {
+                state.copy(isParticleWeatherAuto = false)
+            }
+        }
+        persistSetting {
+            this[PreferenceKeys.particleWeatherMode] = if (auto) "AUTO" else _uiState.value.particleWeather.name
+        }
+    }
+
+    fun setParticleWeather(weather: ParticleWeather) {
+        _uiState.update { it.copy(isParticleWeatherAuto = false, particleWeather = weather) }
+        persistSetting {
+            this[PreferenceKeys.particleWeatherMode] = weather.name
+        }
+    }
+
+    fun toggleCats(enabled: Boolean) {
+        _uiState.update { it.copy(isCatSystemEnabled = enabled) }
+        persistSetting { this[PreferenceKeys.cats] = enabled }
     }
 
     fun toggleDynamicWallpaper(enabled: Boolean) {

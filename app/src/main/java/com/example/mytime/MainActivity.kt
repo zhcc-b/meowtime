@@ -20,6 +20,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.mytime.ui.ClockViewModel
+import com.example.mytime.ui.ParticleWeather
 import com.example.mytime.ui.theme.FlipClockScreen
 import com.example.mytime.ui.theme.MytimeTheme
 
@@ -66,6 +67,9 @@ class MainActivity : ComponentActivity() {
                         onSelectFont = { viewModel.setFont(it) },
                         onToggleParallax = { viewModel.toggleParallax(it) },
                         onToggleParticles = { viewModel.toggleParticles(it) },
+                        onToggleParticleWeatherAuto = { viewModel.setParticleWeatherAuto(it) },
+                        onSelectParticleWeather = { weather: ParticleWeather -> viewModel.setParticleWeather(weather) },
+                        onToggleCats = { viewModel.toggleCats(it) },
                         onToggleDynamicWallpaper = { viewModel.toggleDynamicWallpaper(it) },
                         onToggle24HourFormat = { viewModel.toggle24HourFormat(it) }
                     )

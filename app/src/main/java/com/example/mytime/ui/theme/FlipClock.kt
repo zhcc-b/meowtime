@@ -1,5 +1,6 @@
 package com.example.mytime.ui.theme
 
+import android.graphics.RectF
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
@@ -28,6 +29,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -41,7 +44,9 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.mytime.R
 import com.example.mytime.ui.ClockFont
 import com.example.mytime.ui.ClockState
+import com.example.mytime.ui.ParticleWeather
 import kotlinx.coroutines.isActive
+import kotlin.math.sin
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
@@ -56,10 +61,14 @@ fun FlipClockScreen(
     onSelectFont: (ClockFont) -> Unit,
     onToggleParallax: (Boolean) -> Unit,
     onToggleParticles: (Boolean) -> Unit,
+    onToggleParticleWeatherAuto: (Boolean) -> Unit,
+    onSelectParticleWeather: (ParticleWeather) -> Unit,
+    onToggleCats: (Boolean) -> Unit,
     onToggleDynamicWallpaper: (Boolean) -> Unit,
     onToggle24HourFormat: (Boolean) -> Unit
 ) {
     val currentFont = state.selectedFont.family
+    var timeRect by remember { mutableStateOf(RectF()) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 1. 背景层
@@ -88,8 +97,15 @@ fun FlipClockScreen(
         }
 
         if (state.isParticleSystemEnabled) {
-            SeamlessParticleLayer()
+            SeamlessParticleLayer(weather = state.particleWeather)
         }
+
+        FilamentCatOverlay(
+            enabled = state.isCatSystemEnabled,
+            weather = state.particleWeather,
+            forbiddenRect = timeRect,
+            modifier = Modifier.fillMaxSize()
+        )
 
         val mainDisplayTransform = Modifier
             .graphicsLayer {
@@ -110,7 +126,8 @@ fun FlipClockScreen(
             fontFamily = currentFont,
             onPlayAudio = onPlayAudio,
             onToggleSettings = onOpenSettings,
-            mainDisplayModifier = mainDisplayTransform
+            mainDisplayModifier = mainDisplayTransform,
+            onTimeBoundsChanged = { timeRect = it }
         )
 
         SettingsMenu(
@@ -122,6 +139,9 @@ fun FlipClockScreen(
             onSelectFont = onSelectFont,
             onToggleParallax = onToggleParallax,
             onToggleParticles = onToggleParticles,
+            onToggleParticleWeatherAuto = onToggleParticleWeatherAuto,
+            onSelectParticleWeather = onSelectParticleWeather,
+            onToggleCats = onToggleCats,
             onToggleDynamicWallpaper = onToggleDynamicWallpaper,
             onToggle24HourFormat = onToggle24HourFormat
         )
@@ -129,9 +149,10 @@ fun FlipClockScreen(
 }
 
 @Composable
-fun SeamlessParticleLayer() {
-    val particles = remember { List(70) { ParticleData() } }
+fun SeamlessParticleLayer(weather: ParticleWeather) {
+    val particles = remember(weather) { List(weather.particleCount) { WeatherParticle(weather) } }
     var elapsedMillis by remember { mutableStateOf(0L) }
+    val color = weather.tintColor
     LaunchedEffect(Unit) {
         val startTime = withFrameNanos { it } / 1_000_000
         while (isActive) {
@@ -144,22 +165,231 @@ fun SeamlessParticleLayer() {
     Canvas(modifier = Modifier.fillMaxSize()) {
         val seconds = elapsedMillis / 1000f
         particles.forEach { p ->
-            val currentYProgress = (p.startY + (seconds * p.speed)) % 1.0f
-            val y = currentYProgress * size.height
-            val x = p.startX * size.width
-            val edgeAlpha = when {
-                currentYProgress < 0.1f -> currentYProgress / 0.1f
-                currentYProgress > 0.9f -> (1.0f - currentYProgress) / 0.1f
-                else -> 1.0f
+            when (weather) {
+                ParticleWeather.WIND -> {
+                    val xProgress = (p.startX + seconds * p.speed) % 1f
+                    val y = p.startY * size.height + sin(seconds * p.swayFrequency + p.phase) * p.swayAmplitude * size.height
+                    val x = xProgress * size.width
+                    val edgeAlpha = when {
+                        xProgress < 0.08f -> xProgress / 0.08f
+                        xProgress > 0.92f -> (1f - xProgress) / 0.08f
+                        else -> 1f
+                    }
+                    drawLine(
+                        color = color.copy(alpha = p.alpha * edgeAlpha),
+                        start = Offset(x, y),
+                        end = Offset(x + p.length * 1.8f, y + p.length * 0.1f),
+                        strokeWidth = p.size
+                    )
+                }
+
+                ParticleWeather.RAIN, ParticleWeather.DRIZZLE -> {
+                    val yProgress = (p.startY + (seconds * p.speed)) % 1f
+                    val sway = sin(seconds * p.swayFrequency + p.phase) * p.swayAmplitude * size.width
+                    val xBase = (p.startX * size.width + sway).wrap(size.width)
+                    val y = yProgress * size.height
+                    val edgeAlpha = when {
+                        yProgress < 0.08f -> yProgress / 0.08f
+                        yProgress > 0.92f -> (1f - yProgress) / 0.08f
+                        else -> 1f
+                    }
+                    drawLine(
+                        color = color.copy(alpha = p.alpha * edgeAlpha),
+                        start = Offset(xBase, y),
+                        end = Offset(xBase - p.length * 0.35f, y + p.length),
+                        strokeWidth = p.size
+                    )
+                }
+
+                ParticleWeather.SNOW, ParticleWeather.BLIZZARD -> {
+                    val yProgress = (p.startY + (seconds * p.speed)) % 1f
+                    val sway = sin(seconds * p.swayFrequency + p.phase) * p.swayAmplitude * size.width
+                    val x = (p.startX * size.width + sway).wrap(size.width)
+                    val y = yProgress * size.height
+                    val edgeAlpha = when {
+                        yProgress < 0.1f -> yProgress / 0.1f
+                        yProgress > 0.9f -> (1f - yProgress) / 0.1f
+                        else -> 1f
+                    }
+                    drawSnowflake(
+                        center = Offset(x, y),
+                        radius = p.size,
+                        color = color.copy(alpha = p.alpha * edgeAlpha),
+                        stroke = (p.size * 0.28f).coerceAtLeast(0.8f)
+                    )
+                }
+
+                ParticleWeather.HAIL -> {
+                    val yProgress = (p.startY + (seconds * p.speed)) % 1f
+                    val x = p.startX * size.width
+                    val y = yProgress * size.height
+                    val edgeAlpha = when {
+                        yProgress < 0.08f -> yProgress / 0.08f
+                        yProgress > 0.92f -> (1f - yProgress) / 0.08f
+                        else -> 1f
+                    }
+                    drawCircle(
+                        color = color.copy(alpha = p.alpha * edgeAlpha),
+                        radius = p.size,
+                        center = Offset(x, y)
+                    )
+                    drawCircle(
+                        color = Color.White.copy(alpha = p.alpha * 0.2f * edgeAlpha),
+                        radius = p.size * 0.5f,
+                        center = Offset(x, y)
+                    )
+                }
             }
-            drawCircle(color = Color.White.copy(alpha = p.alpha * edgeAlpha), radius = p.size, center = Offset(x, y))
         }
     }
 }
 
-class ParticleData {
-    val startX = Random.nextFloat(); val startY = Random.nextFloat()
-    val speed = 0.05f + Random.nextFloat() * 0.1f; val size = 1f + Random.nextFloat() * 3f; val alpha = 0.1f + Random.nextFloat() * 0.4f
+private data class WeatherParticle(
+    val startX: Float,
+    val startY: Float,
+    val speed: Float,
+    val size: Float,
+    val alpha: Float,
+    val length: Float,
+    val swayAmplitude: Float,
+    val swayFrequency: Float,
+    val phase: Float
+)
+
+private fun WeatherParticle(weather: ParticleWeather): WeatherParticle {
+    return when (weather) {
+        ParticleWeather.RAIN -> WeatherParticle(
+            startX = Random.nextFloat(),
+            startY = Random.nextFloat(),
+            speed = 0.55f + Random.nextFloat() * 0.55f,
+            size = 1f + Random.nextFloat() * 1.4f,
+            alpha = 0.15f + Random.nextFloat() * 0.35f,
+            length = 14f + Random.nextFloat() * 14f,
+            swayAmplitude = 0.005f + Random.nextFloat() * 0.015f,
+            swayFrequency = 1f + Random.nextFloat() * 1.2f,
+            phase = Random.nextFloat() * 6.28f
+        )
+        ParticleWeather.DRIZZLE -> WeatherParticle(
+            startX = Random.nextFloat(),
+            startY = Random.nextFloat(),
+            speed = 0.35f + Random.nextFloat() * 0.35f,
+            size = 0.8f + Random.nextFloat() * 1f,
+            alpha = 0.1f + Random.nextFloat() * 0.2f,
+            length = 10f + Random.nextFloat() * 10f,
+            swayAmplitude = 0.01f + Random.nextFloat() * 0.02f,
+            swayFrequency = 1.2f + Random.nextFloat(),
+            phase = Random.nextFloat() * 6.28f
+        )
+        ParticleWeather.SNOW -> WeatherParticle(
+            startX = Random.nextFloat(),
+            startY = Random.nextFloat(),
+            speed = 0.035f + Random.nextFloat() * 0.09f,
+            size = 1.4f + Random.nextFloat() * 3.2f,
+            alpha = 0.18f + Random.nextFloat() * 0.45f,
+            length = 0f,
+            swayAmplitude = 0.01f + Random.nextFloat() * 0.03f,
+            swayFrequency = 0.7f + Random.nextFloat() * 1.4f,
+            phase = Random.nextFloat() * 6.28f
+        )
+        ParticleWeather.BLIZZARD -> WeatherParticle(
+            startX = Random.nextFloat(),
+            startY = Random.nextFloat(),
+            speed = 0.16f + Random.nextFloat() * 0.2f,
+            size = 1.2f + Random.nextFloat() * 2.4f,
+            alpha = 0.16f + Random.nextFloat() * 0.32f,
+            length = 0f,
+            swayAmplitude = 0.04f + Random.nextFloat() * 0.05f,
+            swayFrequency = 2.2f + Random.nextFloat() * 1.4f,
+            phase = Random.nextFloat() * 6.28f
+        )
+        ParticleWeather.HAIL -> WeatherParticle(
+            startX = Random.nextFloat(),
+            startY = Random.nextFloat(),
+            speed = 0.65f + Random.nextFloat() * 0.85f,
+            size = 1.4f + Random.nextFloat() * 2.6f,
+            alpha = 0.2f + Random.nextFloat() * 0.5f,
+            length = 0f,
+            swayAmplitude = 0.002f + Random.nextFloat() * 0.008f,
+            swayFrequency = 0.5f + Random.nextFloat(),
+            phase = Random.nextFloat() * 6.28f
+        )
+        ParticleWeather.WIND -> WeatherParticle(
+            startX = Random.nextFloat(),
+            startY = Random.nextFloat(),
+            speed = 0.16f + Random.nextFloat() * 0.35f,
+            size = 0.7f + Random.nextFloat() * 1.4f,
+            alpha = 0.1f + Random.nextFloat() * 0.28f,
+            length = 12f + Random.nextFloat() * 20f,
+            swayAmplitude = 0.006f + Random.nextFloat() * 0.02f,
+            swayFrequency = 0.8f + Random.nextFloat() * 1.3f,
+            phase = Random.nextFloat() * 6.28f
+        )
+    }
+}
+
+private val ParticleWeather.particleCount: Int
+    get() = when (this) {
+        ParticleWeather.RAIN -> 120
+        ParticleWeather.DRIZZLE -> 100
+        ParticleWeather.SNOW -> 80
+        ParticleWeather.BLIZZARD -> 130
+        ParticleWeather.HAIL -> 110
+        ParticleWeather.WIND -> 90
+    }
+
+private val ParticleWeather.tintColor: Color
+    get() = when (this) {
+        ParticleWeather.RAIN -> Color(0xFFB5D4FF)
+        ParticleWeather.DRIZZLE -> Color(0xFFD3E3FF)
+        ParticleWeather.SNOW -> Color(0xFFF5FAFF)
+        ParticleWeather.BLIZZARD -> Color(0xFFEAF5FF)
+        ParticleWeather.HAIL -> Color(0xFFDDF1FF)
+        ParticleWeather.WIND -> Color(0xFFE8EEF7)
+    }
+
+private fun Float.wrap(max: Float): Float {
+    if (max <= 0f) return this
+    var v = this % max
+    if (v < 0f) v += max
+    return v
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSnowflake(
+    center: Offset,
+    radius: Float,
+    color: Color,
+    stroke: Float
+) {
+    val r = radius.coerceAtLeast(1.2f)
+    val arm = r * 1.25f
+    val branch = arm * 0.32f
+
+    // 3 axes = 6-point snowflake
+    repeat(3) { i ->
+        val angle = i * (Math.PI / 3.0)
+        val dx = kotlin.math.cos(angle).toFloat()
+        val dy = kotlin.math.sin(angle).toFloat()
+        val start = Offset(center.x - dx * arm, center.y - dy * arm)
+        val end = Offset(center.x + dx * arm, center.y + dy * arm)
+        drawLine(color = color, start = start, end = end, strokeWidth = stroke)
+
+        val px = center.x + dx * arm * 0.58f
+        val py = center.y + dy * arm * 0.58f
+        val nx = -dy
+        val ny = dx
+        drawLine(
+            color = color,
+            start = Offset(px, py),
+            end = Offset(px + nx * branch, py + ny * branch),
+            strokeWidth = stroke * 0.85f
+        )
+        drawLine(
+            color = color,
+            start = Offset(px, py),
+            end = Offset(px - nx * branch, py - ny * branch),
+            strokeWidth = stroke * 0.85f
+        )
+    }
 }
 
 @Composable
@@ -172,6 +402,9 @@ private fun SettingsMenu(
     onSelectFont: (ClockFont) -> Unit,
     onToggleParallax: (Boolean) -> Unit,
     onToggleParticles: (Boolean) -> Unit,
+    onToggleParticleWeatherAuto: (Boolean) -> Unit,
+    onSelectParticleWeather: (ParticleWeather) -> Unit,
+    onToggleCats: (Boolean) -> Unit,
     onToggleDynamicWallpaper: (Boolean) -> Unit,
     onToggle24HourFormat: (Boolean) -> Unit
 ) {
@@ -200,6 +433,15 @@ private fun SettingsMenu(
                         HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                         SettingToggle(stringResource(id = R.string.settings_gyroscope), state.isParallaxEnabled, onToggleParallax)
                         SettingToggle(stringResource(id = R.string.settings_particles), state.isParticleSystemEnabled, onToggleParticles)
+                        if (state.isParticleSystemEnabled) {
+                            ParticleWeatherSelector(
+                                isAuto = state.isParticleWeatherAuto,
+                                selected = state.particleWeather,
+                                onToggleAuto = onToggleParticleWeatherAuto,
+                                onSelectWeather = onSelectParticleWeather
+                            )
+                        }
+                        SettingToggle(stringResource(id = R.string.settings_cats), state.isCatSystemEnabled, onToggleCats)
                         SettingToggle(stringResource(id = R.string.settings_wallpaper), state.isDynamicWallpaperEnabled, onToggleDynamicWallpaper)
                         SettingToggle(stringResource(id = R.string.settings_burnin), state.isBurnInProtectionEnabled, onToggleBurnIn)
                         SettingToggle(stringResource(id = R.string.settings_24_hour), state.is24HourFormat, onToggle24HourFormat)
@@ -229,6 +471,74 @@ private fun SettingsMenu(
 }
 
 @Composable
+private fun ParticleWeatherSelector(
+    isAuto: Boolean,
+    selected: ParticleWeather,
+    onToggleAuto: (Boolean) -> Unit,
+    onSelectWeather: (ParticleWeather) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(stringResource(id = R.string.settings_particle_weather), color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            item {
+                val isSelected = isAuto
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isSelected) Color.White.copy(alpha = 0.2f) else Color.Transparent)
+                        .border(
+                            1.dp,
+                            if (isSelected) Color.White else Color.White.copy(alpha = 0.1f),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .clickable { onToggleAuto(true) }
+                        .padding(horizontal = 12.dp, vertical = 7.dp)
+                ) {
+                    Text(
+                        text = stringResource(id = R.string.settings_particle_weather_auto),
+                        color = if (isSelected) Color.White else Color.White.copy(alpha = 0.6f),
+                        fontSize = 12.sp
+                    )
+                }
+            }
+            items(ParticleWeather.entries) { weather ->
+                val isSelected = !isAuto && weather == selected
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isSelected) Color.White.copy(alpha = 0.2f) else Color.Transparent)
+                        .border(
+                            1.dp,
+                            if (isSelected) Color.White else Color.White.copy(alpha = 0.1f),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .clickable { onSelectWeather(weather) }
+                        .padding(horizontal = 12.dp, vertical = 7.dp)
+                ) {
+                    Text(
+                        text = weather.label(),
+                        color = if (isSelected) Color.White else Color.White.copy(alpha = 0.6f),
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ParticleWeather.label(): String {
+    return when (this) {
+        ParticleWeather.RAIN -> stringResource(id = R.string.weather_rain)
+        ParticleWeather.SNOW -> stringResource(id = R.string.weather_snow)
+        ParticleWeather.HAIL -> stringResource(id = R.string.weather_hail)
+        ParticleWeather.WIND -> stringResource(id = R.string.weather_wind)
+        ParticleWeather.DRIZZLE -> stringResource(id = R.string.weather_drizzle)
+        ParticleWeather.BLIZZARD -> stringResource(id = R.string.weather_blizzard)
+    }
+}
+
+@Composable
 private fun SettingToggle(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Text(title, color = Color.White.copy(alpha = 0.8f), fontSize = 16.sp)
@@ -242,7 +552,8 @@ private fun ClockContent(
     fontFamily: FontFamily,
     onPlayAudio: () -> Unit,
     onToggleSettings: () -> Unit,
-    mainDisplayModifier: Modifier = Modifier
+    mainDisplayModifier: Modifier = Modifier,
+    onTimeBoundsChanged: (RectF) -> Unit
 ) {
     val configuration = LocalConfiguration.current
     val screenWidth = configuration.screenWidthDp
@@ -282,7 +593,15 @@ private fun ClockContent(
             state = state,
             fontFamily = fontFamily,
             baseSize = baseFontSize,
-            modifier = Modifier.align(Alignment.Center).then(mainDisplayModifier)
+            modifier = Modifier
+                .align(Alignment.Center)
+                .then(mainDisplayModifier)
+                .onGloballyPositioned { coordinates ->
+                    val rect = coordinates.boundsInRoot()
+                    onTimeBoundsChanged(
+                        RectF(rect.left, rect.top, rect.right, rect.bottom)
+                    )
+                }
         )
         Text(
             text = "${state.date} · ${state.dayOfWeek}",
@@ -317,7 +636,9 @@ private fun MainTimeDisplay(state: ClockState, fontFamily: FontFamily, baseSize:
 fun FlipDigit(value: String, fontFamily: FontFamily, fontSize: Float) {
     var prevValue by remember { mutableStateOf(value) }
     val rotation = remember { Animatable(0f) }
-    val slotWidth = with(LocalDensity.current) { (fontSize * 1.35f).sp.toDp() }
+    // Decorative fonts can make pairs like 22/33 much wider than 11/12.
+    // Keep a wider fixed slot so adjacent fields never overlap.
+    val slotWidth = with(LocalDensity.current) { (fontSize * 1.75f).sp.toDp() }
     LaunchedEffect(value) {
         if (value != prevValue) {
             rotation.snapTo(0f); rotation.animateTo(180f, tween(500, easing = LinearOutSlowInEasing)); prevValue = value; rotation.snapTo(0f)

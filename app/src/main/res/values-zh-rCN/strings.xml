@@ -3,12 +3,21 @@
     <string name="settings_title">设置</string>
     <string name="settings_gyroscope">陀螺仪 3D</string>
     <string name="settings_particles">粒子背景</string>
+    <string name="settings_particle_weather">粒子天气</string>
+    <string name="settings_particle_weather_auto">自动（每8小时随机）</string>
+    <string name="settings_cats">实时小猫</string>
     <string name="settings_wallpaper">自动壁纸</string>
     <string name="settings_burnin">防烧屏</string>
     <string name="settings_24_hour">24 小时制</string>
     <string name="settings_sound_button">声音按钮</string>
     <string name="settings_clock_font">时钟字体</string>
     <string name="settings_done">完成</string>
+    <string name="weather_rain">下雨</string>
+    <string name="weather_snow">下雪</string>
+    <string name="weather_hail">冰雹</string>
+    <string name="weather_wind">刮风</string>
+    <string name="weather_drizzle">毛毛雨</string>
+    <string name="weather_blizzard">暴雪</string>
     <string name="cd_settings">打开设置</string>
     <string name="cd_play_sound">播放声音</string>
 </resources>
