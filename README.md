@@ -3,7 +3,7 @@
 
 Welcome to **MeowTime**, the app that combines sleek timekeeping with an irresistible feline twist! Whether you're a cat lover, design enthusiast, or just someone who needs a stylish clock, MeowTime has you covered. Oh, and did we mention it helps you summon your cat? 😸
 
-## App Preview ![MeowTime Screenshot](./src/main/preview.png)
+## App Preview ![MeowTime Screenshot](./app/src/main/ic_launcher-playstore.png)
 
 ## 🌟 Features That Set MeowTime Apart:
 
