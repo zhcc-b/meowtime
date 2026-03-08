@@ -1,0 +1,14 @@
+<resources>
+    <string name="app_name">Mytime</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_gyroscope">Gyroscope 3D</string>
+    <string name="settings_particles">Particle Background</string>
+    <string name="settings_wallpaper">Auto Wallpaper</string>
+    <string name="settings_burnin">Burn-in Protection</string>
+    <string name="settings_24_hour">24-Hour Format</string>
+    <string name="settings_sound_button">Sound Button</string>
+    <string name="settings_clock_font">Clock Font</string>
+    <string name="settings_done">Done</string>
+    <string name="cd_settings">Open settings</string>
+    <string name="cd_play_sound">Play sound</string>
+</resources>
