@@ -9,7 +9,7 @@ MeowTime is a full-screen page-turning clock app built with Jetpack Compose, foc
 
 1. Flip Clock animations: Hour, minute, and second page-turning effects.
 2. 12/24-hour format toggle: Switchable in real-time via settings.
-3. Dynamic wallpaper: Morning/afternoon/night backgrounds cycle by time period.
+3. Dynamic wallpaper: Online wallpapers (morning / afternoon / night) with local fallback when network fails.
 4. Burn-in Protection: Scheduled micro-shifts and brightness strategies.
 5. Gyroscope 3D Parallax: Toggleable.
 6. Weather Particle Background: Rain / Snowflake / Hail / Wind / Drizzle / Blizzard modes.

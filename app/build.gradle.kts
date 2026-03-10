@@ -59,6 +59,7 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.material3)
     implementation(libs.google.material)
+    implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("com.google.android.filament:filament-android:1.66.0")
     implementation("com.google.android.filament:gltfio-android:1.66.0")
     implementation("com.google.android.filament:filament-utils-android:1.66.0")

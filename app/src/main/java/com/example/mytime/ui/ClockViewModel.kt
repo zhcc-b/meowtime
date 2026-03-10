@@ -169,10 +169,10 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         h12.toString().padStart(2, '0')
                     }
                     val amPm = if (state.is24HourFormat) "" else now.format(amPmFormatter)
-                    val backgroundRes = if (state.isDynamicWallpaperEnabled) {
-                        getBackgroundForTime(hour24)
+                    val onlineWallpaper = if (state.isDynamicWallpaperEnabled) {
+                        getOnlineBackgroundForTime(now, hour24)
                     } else {
-                        R.drawable.jiguang
+                        null
                     }
                     state.copy(
                         hour = displayHour,
@@ -181,7 +181,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         amPm = amPm,
                         date = now.format(dateFormatter),
                         dayOfWeek = now.dayOfWeek.getDisplayName(TextStyle.FULL, locale),
-                        backgroundRes = backgroundRes,
+                        backgroundRes = if (state.isDynamicWallpaperEnabled) null else R.drawable.jiguang,
+                        backgroundUrl = onlineWallpaper,
                         particleWeather = if (state.isParticleWeatherAuto) activeWeather else state.particleWeather,
                         burnInOffset = burnInOffset
                     )
@@ -199,10 +200,26 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         return options[random.nextInt(options.size)]
     }
 
-    private fun getBackgroundForTime(hour: Int): Int = when (hour) {
-        in 6..11 -> R.drawable.morning_background
-        in 12..17 -> R.drawable.afternoon_background
-        else -> R.drawable.jiguang
+    private fun getOnlineBackgroundForTime(now: ZonedDateTime, hour: Int): String {
+        val urls = when (hour) {
+            in 6..11 -> listOf(
+                "https://picsum.photos/seed/meowtime-morning-1/1920/1080",
+                "https://picsum.photos/seed/meowtime-morning-2/1920/1080",
+                "https://picsum.photos/seed/meowtime-morning-3/1920/1080"
+            )
+            in 12..17 -> listOf(
+                "https://picsum.photos/seed/meowtime-afternoon-1/1920/1080",
+                "https://picsum.photos/seed/meowtime-afternoon-2/1920/1080",
+                "https://picsum.photos/seed/meowtime-afternoon-3/1920/1080"
+            )
+            else -> listOf(
+                "https://picsum.photos/seed/meowtime-night-1/1920/1080",
+                "https://picsum.photos/seed/meowtime-night-2/1920/1080",
+                "https://picsum.photos/seed/meowtime-night-3/1920/1080"
+            )
+        }
+        val index = ((now.year + now.dayOfYear + (hour / 6)) % urls.size).coerceAtLeast(0)
+        return urls[index]
     }
 
     fun fetchLocation(hasLocationPermission: Boolean) {

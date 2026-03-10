@@ -45,6 +45,7 @@ import com.example.mytime.R
 import com.example.mytime.ui.ClockFont
 import com.example.mytime.ui.ClockState
 import com.example.mytime.ui.ParticleWeather
+import coil.compose.AsyncImage
 import kotlinx.coroutines.isActive
 import kotlin.math.sin
 import kotlin.math.roundToInt
@@ -72,28 +73,42 @@ fun FlipClockScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 1. 背景层
-        state.backgroundRes?.let { resId ->
-            Image(
-                painter = painterResource(id = resId),
+        val backgroundModifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer(
+                scaleX = 1.25f,
+                scaleY = 1.25f,
+                rotationX = (-state.parallaxOffset.y * 0.05f).coerceIn(-5f, 5f),
+                rotationY = (state.parallaxOffset.x * 0.05f).coerceIn(-5f, 5f)
+            )
+            .offset {
+                IntOffset(
+                    (-state.parallaxOffset.x * 0.3f).roundToInt(),
+                    (-state.parallaxOffset.y * 0.3f).roundToInt()
+                )
+            }
+            .alpha(0.6f)
+
+        if (state.backgroundUrl != null) {
+            AsyncImage(
+                model = state.backgroundUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer(
-                        scaleX = 1.25f, 
-                        scaleY = 1.25f,
-                        rotationX = (-state.parallaxOffset.y * 0.05f).coerceIn(-5f, 5f),
-                        rotationY = (state.parallaxOffset.x * 0.05f).coerceIn(-5f, 5f)
-                    )
-                    .offset { 
-                        IntOffset(
-                            (-state.parallaxOffset.x * 0.3f).roundToInt(),
-                            (-state.parallaxOffset.y * 0.3f).roundToInt()
-                        )
-                    }
-                    .alpha(0.6f),
+                modifier = backgroundModifier,
+                error = painterResource(id = R.drawable.jiguang),
+                placeholder = painterResource(id = R.drawable.jiguang),
                 colorFilter = ColorFilter.tint(Color.Black.copy(alpha = 0.5f), BlendMode.Multiply)
             )
+        } else {
+            state.backgroundRes?.let { resId ->
+                Image(
+                    painter = painterResource(id = resId),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = backgroundModifier,
+                    colorFilter = ColorFilter.tint(Color.Black.copy(alpha = 0.5f), BlendMode.Multiply)
+                )
+            }
         }
 
         if (state.isParticleSystemEnabled) {
@@ -563,11 +578,15 @@ private fun ClockContent(
     // 开启防烧屏时降低亮度
     val alpha by animateFloatAsState(targetValue = if (state.isBurnInProtectionEnabled) 0.65f else 0.9f, animationSpec = tween(1000), label = "burnInAlpha")
 
-    Box(modifier = Modifier.fillMaxSize().alpha(alpha).padding(16.dp)) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .alpha(alpha)
+            .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .statusBarsPadding()
                 .align(Alignment.TopCenter),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically

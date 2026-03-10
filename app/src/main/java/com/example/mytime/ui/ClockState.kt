@@ -16,6 +16,7 @@ data class ClockState(
     val batteryLevel: String = "--",
     val location: String = "Loading...",
     val backgroundRes: Int? = null,
+    val backgroundUrl: String? = null,
     
     // 设置项
     val isBurnInProtectionEnabled: Boolean = true,
