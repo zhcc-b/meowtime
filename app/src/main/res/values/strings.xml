@@ -12,6 +12,9 @@
     <string name="settings_sound_button">Sound Button</string>
     <string name="settings_clock_font">Clock Font</string>
     <string name="settings_done">Done</string>
+    <string name="weather_sunny">Sunny</string>
+    <string name="weather_cloudy">Cloudy</string>
+    <string name="weather_fog">Fog</string>
     <string name="weather_rain">Rain</string>
     <string name="weather_snow">Snow</string>
     <string name="weather_hail">Hail</string>
