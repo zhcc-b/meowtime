@@ -12,6 +12,9 @@
     <string name="settings_sound_button">声音按钮</string>
     <string name="settings_clock_font">时钟字体</string>
     <string name="settings_done">完成</string>
+    <string name="weather_sunny">晴天</string>
+    <string name="weather_cloudy">多云</string>
+    <string name="weather_fog">雾天</string>
     <string name="weather_rain">下雨</string>
     <string name="weather_snow">下雪</string>
     <string name="weather_hail">冰雹</string>

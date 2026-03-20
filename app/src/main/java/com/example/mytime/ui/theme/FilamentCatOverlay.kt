@@ -330,6 +330,42 @@ private class CatFilamentRenderer(private val context: Context) {
 
     private fun behaviorProfile(): CatBehaviorProfile {
         return when (weather) {
+            ParticleWeather.SUNNY -> CatBehaviorProfile(
+                walkDelayMinMs = 4_000L,
+                walkDelayMaxMs = 18_000L,
+                idleMinSec = 5f,
+                idleMaxSec = 18f,
+                walkSpeedPxPerSec = 175f,
+                reactMoveSpeedPxPerSec = 60f,
+                reactDurationSec = 1.0f,
+                walkBobAmp = 0.045f,
+                idleHeadTurnAmpDeg = 5f,
+                reactHeadTurnAmpDeg = 7f
+            )
+            ParticleWeather.CLOUDY -> CatBehaviorProfile(
+                walkDelayMinMs = 5_500L,
+                walkDelayMaxMs = 20_000L,
+                idleMinSec = 7f,
+                idleMaxSec = 20f,
+                walkSpeedPxPerSec = 155f,
+                reactMoveSpeedPxPerSec = 54f,
+                reactDurationSec = 1.05f,
+                walkBobAmp = 0.04f,
+                idleHeadTurnAmpDeg = 4f,
+                reactHeadTurnAmpDeg = 6f
+            )
+            ParticleWeather.FOG -> CatBehaviorProfile(
+                walkDelayMinMs = 7_000L,
+                walkDelayMaxMs = 24_000L,
+                idleMinSec = 8f,
+                idleMaxSec = 24f,
+                walkSpeedPxPerSec = 135f,
+                reactMoveSpeedPxPerSec = 48f,
+                reactDurationSec = 1.15f,
+                walkBobAmp = 0.035f,
+                idleHeadTurnAmpDeg = 4f,
+                reactHeadTurnAmpDeg = 5f
+            )
             ParticleWeather.RAIN -> CatBehaviorProfile(
                 walkDelayMinMs = 2_000L,
                 walkDelayMaxMs = 14_000L,

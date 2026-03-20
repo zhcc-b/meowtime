@@ -1,6 +1,9 @@
 package com.example.mytime.ui
 
 enum class ParticleWeather {
+    SUNNY,
+    CLOUDY,
+    FOG,
     RAIN,
     SNOW,
     HAIL,
@@ -8,4 +11,3 @@ enum class ParticleWeather {
     DRIZZLE,
     BLIZZARD
 }
-
