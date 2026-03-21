@@ -1,29 +1,41 @@
 # MeowTime
 
-MeowTime is a full-screen page-turning clock app built with Jetpack Compose, focused on expressive visuals, customizable effects, and always-on desk mode usability.
+MeowTime is a full-screen desk clock for Android, built with Jetpack Compose and tuned for always-on landscape use. The current branch focuses on a liquid-glass visual language, mechanical split-flap time transitions, weather-reactive backgrounds, and a Filament cat layer that lives around the clock instead of covering it.
 
 ## App Screenshot
 ![MeowTime Screenshot](./docs/images/app-screenshot.png)
 
 ## Current Features
 
-1. Flip Clock animations: Hour, minute, and second page-turning effects.
-2. 12/24-hour format toggle: Switchable in real-time via settings.
-3. Dynamic wallpaper: Online wallpapers (morning / afternoon / night) with local fallback when network fails.
-4. Burn-in Protection: Scheduled micro-shifts and brightness strategies.
-5. Gyroscope 3D Parallax: Toggleable.
-6. Weather Particle Background: Rain / Snowflake / Hail / Wind / Drizzle / Blizzard modes.
-7. Weather Mode Control: Manual weather selection in settings, with optional auto-random weather every 8 hours.
-8. Realtime 3D Cat Layer: Filament + TextureView based cat rendering integrated into the main clock scene.
-9. Cat Behavior FSM: Idle / Walking / Reacting states with randomized movement and clock-event reactions.
-10. Weather-linked Cat Behavior: Cat movement cadence, speed, head motion, and reaction timing adapt by current weather.
-11. Font Switching: Multiple built-in local fonts (Google services-independent).
-12. Location Display: Prioritizes device positioning; falls back to HTTPS IP if unavailable.
-13. Battery status display: Top battery icon and numerical value.
-14. Cat sound button: Play sound effects via the cat button in the bottom-right corner.
-15. Settings persistence: Primary toggles, font choice, and weather mode are saved in DataStore.
-16. Chinese text support: `values-zh-rCN` resources provided.
+1. Liquid-glass clock UI: translucent top controls, footer plate, and settings drawer with layered highlights and shadows.
+2. Mechanical split-flap animation: hour, minute, and second digits use a two-stage flip with hinge shading, back-face darkening, and compact second tiles.
+3. 12/24-hour format toggle: switchable live from settings.
+4. Dynamic wallpaper: online wallpapers by time-of-day with local fallback when loading fails.
+5. Burn-in protection: alpha reduction plus periodic micro-shift offsets.
+6. Gyroscope parallax: optional scene tilt and depth motion.
+7. Apple-weather-inspired backdrop: animated sky glow, cloud veils, fog layers, and weather particles.
+8. Weather modes: `SUNNY`, `CLOUDY`, `FOG`, `RAIN`, `SNOW`, `HAIL`, `WIND`, `DRIZZLE`, `BLIZZARD`.
+9. Weather control: manual weather selection in settings or auto-random rotation every 8 hours.
+10. Realtime cat layer: Filament + TextureView rendering with one cat actor constrained away from the main time area.
+11. Weather-linked cat behavior: movement cadence and reactions change with the current weather mode.
+12. Local Google Fonts bundle: clock fonts are packaged in-app and do not rely on Google Play Services.
+13. Font options tuned for the flip layout: `Modern`, `Style 1`, `Digital`, `Pixel`, each with its own layout calibration.
+14. Location display: prioritizes device location and falls back to HTTPS IP lookup.
+15. Battery indicator: icon + numeric percentage in the top-right status cluster.
+16. Cat sound button: plays audio from the bottom-right paw button.
+17. Persistent settings: main toggles, weather mode, and font choice are stored with DataStore.
+18. Chinese resources: `values-zh-rCN` included.
 
+## Fonts
+
+The current packaged fonts are local replacements based on Google Fonts:
+
+- `Modern`: Oxanium
+- `Style 1`: Aldrich
+- `Digital`: Orbitron
+- `Pixel`: Silkscreen
+
+They are bundled under `app/src/main/res/font/` to keep the app usable on devices without reliable Google font-provider support.
 
 ## Tech Stack
 
@@ -32,6 +44,7 @@ MeowTime is a full-screen page-turning clock app built with Jetpack Compose, foc
 - Filament (`filament-android`, `gltfio-android`)
 - Android ViewModel + StateFlow
 - DataStore Preferences
+- Coil Compose
 
 ## Build & Run
 
