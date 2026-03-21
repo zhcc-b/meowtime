@@ -55,6 +55,7 @@ import com.example.mytime.R
 import com.example.mytime.ui.ClockFont
 import com.example.mytime.ui.ClockState
 import com.example.mytime.ui.ParticleWeather
+import com.example.mytime.ui.UiFontFamily
 import coil.compose.AsyncImage
 import kotlinx.coroutines.isActive
 import kotlin.math.cos
@@ -1121,7 +1122,7 @@ private fun ClockContent(
                     text = state.location,
                     color = LiquidGlassText.copy(alpha = 0.9f),
                     fontSize = 13.sp,
-                    fontFamily = fontFamily,
+                    fontFamily = UiFontFamily,
                     letterSpacing = 0.8.sp
                 )
             }
@@ -1164,7 +1165,7 @@ private fun ClockContent(
             text = "${state.date} · ${state.dayOfWeek}",
             color = LiquidGlassText.copy(alpha = 0.9f),
             fontSize = footerFontSize,
-            fontFamily = fontFamily,
+            fontFamily = UiFontFamily,
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .clip(RoundedCornerShape(24.dp))
@@ -1186,14 +1187,15 @@ private fun ClockContent(
 private fun MainTimeDisplay(state: ClockState, fontFamily: FontFamily, baseSize: Float, modifier: Modifier) {
     BoxWithConstraints(modifier = modifier) {
         val availableWidth = maxWidth.value
-        val widthFactor = (if (state.amPm.isNotBlank()) 6.1f else 5.6f) * state.selectedFont.widthFitMultiplier
-        val fittedBaseSize = ((availableWidth - 44f) / widthFactor).coerceAtLeast(34f)
+        val widthFactor = (if (state.amPm.isNotBlank()) 5.35f else 4.95f) * state.selectedFont.widthFitMultiplier
+        val fittedBaseSize = ((availableWidth - 12f) / widthFactor).coerceAtLeast(34f)
         val resolvedBaseSize = minOf(baseSize, fittedBaseSize)
+        val secondsScale = state.selectedFont.secondsScale
 
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            FlipDigit(state.hour, fontFamily, resolvedBaseSize)
+            FlipDigit(state.hour, state.selectedFont, resolvedBaseSize)
             Text(":", color = LiquidGlassText.copy(alpha = 0.84f), fontSize = (resolvedBaseSize * 0.78f).sp, fontWeight = FontWeight.Light)
-            FlipDigit(state.minute, fontFamily, resolvedBaseSize)
+            FlipDigit(state.minute, state.selectedFont, resolvedBaseSize)
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(if (state.amPm.isNotBlank()) 18.dp else 10.dp)
@@ -1208,14 +1210,15 @@ private fun MainTimeDisplay(state: ClockState, fontFamily: FontFamily, baseSize:
                             state.amPm,
                             color = LiquidGlassText.copy(alpha = 0.7f),
                             fontSize = (resolvedBaseSize * 0.28f).sp,
-                            fontFamily = fontFamily
+                            fontFamily = UiFontFamily
                         )
                     }
                 }
                 FlipDigit(
                     state.second,
-                    fontFamily,
-                    if (state.amPm.isNotBlank()) resolvedBaseSize * 0.23f else resolvedBaseSize * 0.28f
+                    state.selectedFont,
+                    (if (state.amPm.isNotBlank()) resolvedBaseSize * 0.23f else resolvedBaseSize * 0.28f) * secondsScale,
+                    compact = true
                 )
             }
         }
@@ -1223,22 +1226,36 @@ private fun MainTimeDisplay(state: ClockState, fontFamily: FontFamily, baseSize:
 }
 
 @Composable
-fun FlipDigit(value: String, fontFamily: FontFamily, fontSize: Float) {
+fun FlipDigit(value: String, font: ClockFont, fontSize: Float, compact: Boolean = false) {
     var outgoingValue by remember { mutableStateOf(value) }
     var currentValue by remember { mutableStateOf(value) }
     val progress = remember { Animatable(1f) }
     val density = LocalDensity.current
-    val slotWidth = with(density) { (fontSize * 1.86f).sp.toDp() }
-    val slotHeight = with(density) { (fontSize * 1.12f).sp.toDp() }
-    val gap = 2.dp
+    val slotWidth = with(density) { (fontSize * if (compact) 1.84f else 1.86f).sp.toDp() }
+    val slotHeight = with(density) { (fontSize * if (compact) 1.08f else 1.12f).sp.toDp() }
+    val gap = if (compact) 1.dp else 2.dp
     val totalHeight = slotHeight + gap
+    val flipDuration = if (compact) 720 else 860
+    val topEnd = if (compact) 220 else 250
+    val holdStart = if (compact) 280 else 330
+    val holdEnd = if (compact) 330 else 390
 
     LaunchedEffect(value) {
         if (value != currentValue) {
             outgoingValue = currentValue
             currentValue = value
             progress.snapTo(0f)
-            progress.animateTo(1f, tween(durationMillis = 720, easing = FastOutSlowInEasing))
+            progress.animateTo(
+                1f,
+                keyframes {
+                    durationMillis = flipDuration
+                    0f at 0
+                    0.46f at topEnd
+                    0.50f at holdStart
+                    0.54f at holdEnd
+                    1f at flipDuration
+                }
+            )
             outgoingValue = currentValue
         }
     }
@@ -1247,6 +1264,11 @@ fun FlipDigit(value: String, fontFamily: FontFamily, fontSize: Float) {
     val bottomRotation = if (progress.value > 0.5f) 90f - ((progress.value - 0.5f) * 180f) else 90f
     val staticTopValue = if (progress.value < 0.5f) outgoingValue else currentValue
     val staticBottomValue = if (progress.value < 0.5f) outgoingValue else currentValue
+    val topPhase = (progress.value / 0.5f).coerceIn(0f, 1f)
+    val bottomPhase = ((progress.value - 0.5f) / 0.5f).coerceIn(0f, 1f)
+    val hingePulse = (1f - (kotlin.math.abs(progress.value - 0.5f) / 0.5f)).coerceIn(0f, 1f)
+    val topFlipDepth = sin(topPhase * Math.PI.toFloat()).coerceIn(0f, 1f)
+    val bottomFlipDepth = sin(bottomPhase * Math.PI.toFloat()).coerceIn(0f, 1f)
 
     Box(
         modifier = Modifier
@@ -1259,25 +1281,31 @@ fun FlipDigit(value: String, fontFamily: FontFamily, fontSize: Float) {
         ) {
             FlipDigitHalf(
                 value = staticTopValue,
-                fontFamily = fontFamily,
+                fontFamily = font.family,
                 fontSize = fontSize,
                 slotHeight = slotHeight,
                 isTop = true,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                hingeShadowStrength = 0.08f + hingePulse * 0.10f,
+                compact = compact,
+                verticalBias = font.verticalBias
             )
             FlipDigitHalf(
                 value = staticBottomValue,
-                fontFamily = fontFamily,
+                fontFamily = font.family,
                 fontSize = fontSize,
                 slotHeight = slotHeight,
                 isTop = false,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                hingeShadowStrength = 0.10f + hingePulse * 0.12f,
+                compact = compact,
+                verticalBias = font.verticalBias
             )
         }
         if (progress.value < 0.5f) {
             FlipDigitHalf(
                 value = outgoingValue,
-                fontFamily = fontFamily,
+                fontFamily = font.family,
                 fontSize = fontSize,
                 slotHeight = slotHeight,
                 isTop = true,
@@ -1288,14 +1316,22 @@ fun FlipDigit(value: String, fontFamily: FontFamily, fontSize: Float) {
                         rotationX = topRotation
                         cameraDistance = 22f * density.density
                         transformOrigin = TransformOrigin(0.5f, 1f)
+                        translationY = topFlipDepth * if (compact) 1.5f else 2.5f
+                        scaleY = 1f - topFlipDepth * 0.018f
                     },
-                elevated = true
+                elevated = true,
+                edgeShadowStrength = 0.12f + topPhase * 0.26f,
+                hingeShadowStrength = 0.18f + topPhase * 0.28f,
+                sheenStrength = 0.14f - topPhase * 0.08f,
+                backFaceShade = 0.08f + topFlipDepth * 0.20f,
+                compact = compact,
+                verticalBias = font.verticalBias
             )
         }
         if (progress.value > 0.5f) {
             FlipDigitHalf(
                 value = currentValue,
-                fontFamily = fontFamily,
+                fontFamily = font.family,
                 fontSize = fontSize,
                 slotHeight = slotHeight,
                 isTop = false,
@@ -1306,10 +1342,26 @@ fun FlipDigit(value: String, fontFamily: FontFamily, fontSize: Float) {
                         rotationX = bottomRotation
                         cameraDistance = 22f * density.density
                         transformOrigin = TransformOrigin(0.5f, 0f)
+                        translationY = -bottomFlipDepth * if (compact) 1.2f else 2.0f
+                        scaleY = 1f - bottomFlipDepth * 0.015f
                     },
-                elevated = true
+                elevated = true,
+                edgeShadowStrength = 0.30f - bottomPhase * 0.18f,
+                hingeShadowStrength = 0.26f - bottomPhase * 0.14f,
+                sheenStrength = 0.04f + bottomPhase * 0.10f,
+                backFaceShade = 0.18f + bottomFlipDepth * 0.16f,
+                compact = compact,
+                verticalBias = font.verticalBias
             )
         }
+        HingeOverlay(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .height(if (compact) 6.dp else 10.dp),
+            strength = (if (compact) 0.18f else 0.24f) + hingePulse * (if (compact) 0.22f else 0.34f),
+            compact = compact
+        )
     }
 }
 
@@ -1321,13 +1373,29 @@ private fun FlipDigitHalf(
     slotHeight: androidx.compose.ui.unit.Dp,
     isTop: Boolean,
     modifier: Modifier = Modifier,
-    elevated: Boolean = false
+    elevated: Boolean = false,
+    edgeShadowStrength: Float = 0.08f,
+    hingeShadowStrength: Float = 0.10f,
+    sheenStrength: Float = 0.14f,
+    backFaceShade: Float = 0f,
+    compact: Boolean = false,
+    verticalBias: Float = 0.1f
 ) {
     val halfHeight = slotHeight / 2
     val shape = if (isTop) {
-        RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomStart = 12.dp, bottomEnd = 12.dp)
+        RoundedCornerShape(
+            topStart = if (compact) 18.dp else 28.dp,
+            topEnd = if (compact) 18.dp else 28.dp,
+            bottomStart = if (compact) 8.dp else 12.dp,
+            bottomEnd = if (compact) 8.dp else 12.dp
+        )
     } else {
-        RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomStart = 28.dp, bottomEnd = 28.dp)
+        RoundedCornerShape(
+            topStart = if (compact) 8.dp else 12.dp,
+            topEnd = if (compact) 8.dp else 12.dp,
+            bottomStart = if (compact) 18.dp else 28.dp,
+            bottomEnd = if (compact) 18.dp else 28.dp
+        )
     }
     val baseTint = if (isTop) Color.White.copy(alpha = 0.22f) else LiquidGlassCool.copy(alpha = 0.14f)
     val textMeasurer = rememberTextMeasurer()
@@ -1367,12 +1435,50 @@ private fun FlipDigitHalf(
                 drawRect(
                     brush = Brush.verticalGradient(
                         colors = listOf(
-                            baseTint,
+                            baseTint.copy(alpha = baseTint.alpha + sheenStrength * 0.3f),
                             Color.Transparent,
-                            Color.Black.copy(alpha = if (isTop) 0.04f else 0.12f)
+                            Color.Black.copy(alpha = (if (isTop) 0.05f else 0.12f) + edgeShadowStrength)
                         )
                     )
                 )
+                if (backFaceShade > 0f) {
+                    drawRect(Color.Black.copy(alpha = backFaceShade))
+                }
+                if (isTop) {
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = hingeShadowStrength),
+                                Color.Black.copy(alpha = hingeShadowStrength * 1.12f)
+                            ),
+                            startY = size.height * 0.62f,
+                            endY = size.height
+                        )
+                    )
+                    drawRect(
+                        color = Color.Black.copy(alpha = 0.12f + edgeShadowStrength * 0.35f),
+                        topLeft = Offset(0f, size.height - if (compact) 1.dp.toPx() else 1.5.dp.toPx()),
+                        size = Size(size.width, if (compact) 1.dp.toPx() else 1.5.dp.toPx())
+                    )
+                } else {
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = hingeShadowStrength * 1.18f),
+                                Color.Black.copy(alpha = hingeShadowStrength * 0.72f),
+                                Color.Transparent
+                            ),
+                            startY = 0f,
+                            endY = size.height * 0.42f
+                        )
+                    )
+                    drawRect(
+                        color = Color.White.copy(alpha = 0.10f + sheenStrength * 0.24f),
+                        topLeft = Offset(0f, 0f),
+                        size = Size(size.width, if (compact) 1.dp.toPx() else 1.5.dp.toPx())
+                    )
+                }
             }
             .clipToBounds()
     ) {
@@ -1390,13 +1496,42 @@ private fun FlipDigitHalf(
             val halfHeightPx = size.height
             val drawX = (size.width - textLayout.size.width) / 2f
             // Optical center sits slightly below the geometric center for these display fonts.
-            val centeredY = (fullHeightPx - textLayout.size.height) / 2f + fontSize * 0.2f
+            val centeredY = (fullHeightPx - textLayout.size.height) / 2f + fontSize * verticalBias
             val drawY = if (isTop) centeredY else centeredY - halfHeightPx
             drawText(
                 textLayoutResult = textLayout,
                 topLeft = Offset(drawX, drawY)
             )
         }
+    }
+}
+
+@Composable
+private fun HingeOverlay(
+    modifier: Modifier = Modifier,
+    strength: Float,
+    compact: Boolean = false
+) {
+    Canvas(modifier = modifier) {
+        val y = size.height / 2f
+        drawLine(
+            color = Color.Black.copy(alpha = strength * 0.72f),
+            start = Offset(0f, y),
+            end = Offset(size.width, y),
+            strokeWidth = size.height * if (compact) 0.18f else 0.24f
+        )
+        drawLine(
+            color = Color.White.copy(alpha = strength * 0.24f),
+            start = Offset(0f, y - size.height * 0.18f),
+            end = Offset(size.width, y - size.height * 0.18f),
+            strokeWidth = size.height * if (compact) 0.08f else 0.12f
+        )
+        drawLine(
+            color = LiquidGlassShadow.copy(alpha = strength * 0.40f),
+            start = Offset(0f, y + size.height * 0.18f),
+            end = Offset(size.width, y + size.height * 0.18f),
+            strokeWidth = size.height * if (compact) 0.12f else 0.16f
+        )
     }
 }
 
