@@ -140,12 +140,23 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                 val hour24 = now.hour
                 val nowEpochSec = now.toEpochSecond()
                 val weatherAuto = _uiState.value.isParticleWeatherAuto
+                val isNightQuietHours = hour24 >= 23 || hour24 < 7
                 if (weatherAuto) {
                     if (activeWeather != _uiState.value.particleWeather) {
                         activeWeather = _uiState.value.particleWeather
                     }
+                    if (isNightQuietHours && activeWeather.isBrightWeather()) {
+                        activeWeather = pickRandomWeather(
+                            excluding = activeWeather,
+                            allowBrightWeather = false
+                        )
+                        nextWeatherChangeEpochSec = nowEpochSec + (8 * 60 * 60)
+                    }
                     if (nextWeatherChangeEpochSec == 0L || nowEpochSec >= nextWeatherChangeEpochSec) {
-                        activeWeather = pickRandomWeather(excluding = activeWeather)
+                        activeWeather = pickRandomWeather(
+                            excluding = activeWeather,
+                            allowBrightWeather = !isNightQuietHours
+                        )
                         nextWeatherChangeEpochSec = nowEpochSec + (8 * 60 * 60)
                     }
                 } else {
@@ -195,9 +206,18 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         }
     }
 
-    private fun pickRandomWeather(excluding: ParticleWeather): ParticleWeather {
-        val options = ParticleWeather.entries.filter { it != excluding }
+    private fun pickRandomWeather(excluding: ParticleWeather, allowBrightWeather: Boolean = true): ParticleWeather {
+        val candidates = if (allowBrightWeather) {
+            ParticleWeather.entries
+        } else {
+            ParticleWeather.entries.filterNot { it.isBrightWeather() }
+        }
+        val options = candidates.filter { it != excluding }.ifEmpty { candidates }
         return options[random.nextInt(options.size)]
+    }
+
+    private fun ParticleWeather.isBrightWeather(): Boolean {
+        return this == ParticleWeather.SUNNY || this == ParticleWeather.CLOUDY
     }
 
     private fun getOnlineBackgroundForTime(now: ZonedDateTime, hour: Int): String {
