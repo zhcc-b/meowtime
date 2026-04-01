@@ -49,8 +49,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.example.mytime.R
 import com.example.mytime.ui.ClockFont
 import com.example.mytime.ui.ClockState
@@ -82,6 +80,7 @@ fun FlipClockScreen(
 ) {
     val currentFont = state.selectedFont.family
     var timeRect by remember { mutableStateOf(RectF()) }
+    val settingsDim = if (state.isSettingsVisible) 0.34f else 1f
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 1. 背景层
@@ -99,7 +98,7 @@ fun FlipClockScreen(
                     (-state.parallaxOffset.y * 0.3f).roundToInt()
                 )
             }
-            .alpha(0.6f)
+            .alpha(if (state.isSettingsVisible) 0.24f else 0.6f)
 
         if (state.backgroundUrl != null) {
             AsyncImage(
@@ -124,14 +123,18 @@ fun FlipClockScreen(
         }
 
         if (state.isParticleSystemEnabled) {
-            SeamlessParticleLayer(weather = state.particleWeather)
+            Box(modifier = Modifier.alpha(if (state.isSettingsVisible) 0.22f else 1f)) {
+                SeamlessParticleLayer(weather = state.particleWeather)
+            }
         }
 
         FilamentCatOverlay(
             enabled = state.isCatSystemEnabled,
             weather = state.particleWeather,
             forbiddenRect = timeRect,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .alpha(if (state.isSettingsVisible) 0.18f else 1f)
         )
 
         val mainDisplayTransform = Modifier
@@ -154,7 +157,8 @@ fun FlipClockScreen(
             onPlayAudio = onPlayAudio,
             onToggleSettings = onOpenSettings,
             mainDisplayModifier = mainDisplayTransform,
-            onTimeBoundsChanged = { timeRect = it }
+            onTimeBoundsChanged = { timeRect = it },
+            modifier = Modifier.alpha(settingsDim)
         )
 
         SettingsMenu(
@@ -851,8 +855,29 @@ private fun LiquidGlassChip(
         modifier = modifier.clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-        highlightAlpha = if (selected) 0.28f else 0.18f
+        highlightAlpha = if (selected) 0.16f else 0.08f
     ) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(
+                    if (selected) {
+                        Brush.linearGradient(
+                            listOf(
+                                Color(0xFF24364A).copy(alpha = 0.88f),
+                                Color(0xFF182636).copy(alpha = 0.92f)
+                            )
+                        )
+                    } else {
+                        Brush.linearGradient(
+                            listOf(
+                                Color(0xFF162231).copy(alpha = 0.78f),
+                                Color(0xFF101B28).copy(alpha = 0.84f)
+                            )
+                        )
+                    }
+                )
+        )
         if (selected) {
             Box(
                 modifier = Modifier
@@ -860,8 +885,116 @@ private fun LiquidGlassChip(
                     .background(
                         Brush.linearGradient(
                             listOf(
-                                Color.White.copy(alpha = 0.12f),
-                                LiquidGlassCool.copy(alpha = 0.08f)
+                                Color.White.copy(alpha = 0.08f),
+                                LiquidGlassCool.copy(alpha = 0.04f)
+                            )
+                        )
+                    )
+            )
+        }
+        content()
+    }
+}
+
+@Composable
+private fun SettingsPanelSurface(
+    modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(34.dp),
+    padding: PaddingValues = PaddingValues(0.dp),
+    content: @Composable BoxScope.() -> Unit
+) {
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color(0xFF273240).copy(alpha = 0.95f),
+                        Color(0xFF1A2330).copy(alpha = 0.97f),
+                        Color(0xFF101823).copy(alpha = 0.985f)
+                    )
+                ),
+                shape = shape
+            )
+            .border(
+                width = 1.dp,
+                color = Color.White.copy(alpha = 0.16f),
+                shape = shape
+            )
+            .drawWithContent {
+                drawContent()
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.06f),
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.08f)
+                        )
+                    )
+                )
+            }
+            .padding(padding),
+        content = content
+    )
+}
+
+@Composable
+private fun SettingsCardSurface(
+    modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(24.dp),
+    padding: PaddingValues = PaddingValues(0.dp),
+    content: @Composable BoxScope.() -> Unit
+) {
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(
+                color = Color(0xFF1A2431).copy(alpha = 0.96f),
+                shape = shape
+            )
+            .border(
+                width = 1.dp,
+                color = Color.White.copy(alpha = 0.14f),
+                shape = shape
+            )
+            .drawWithContent {
+                drawContent()
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.05f),
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.06f)
+                        )
+                    )
+                )
+            }
+            .padding(padding),
+        content = content
+    )
+}
+
+@Composable
+private fun SettingsChip(
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit
+) {
+    SettingsCardSurface(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        if (selected) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        brush = Brush.linearGradient(
+                            listOf(
+                                Color(0xFF2B3A4B).copy(alpha = 0.94f),
+                                Color(0xFF1C2A39).copy(alpha = 0.98f)
                             )
                         )
                     )
@@ -888,25 +1021,24 @@ private fun SettingsMenu(
     onToggle24HourFormat: (Boolean) -> Unit
 ) {
     if (visible) {
-        Dialog(
-            onDismissRequest = onClose,
-            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF06111D).copy(alpha = 0.58f))
         ) {
             Row(modifier = Modifier.fillMaxSize()) {
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .background(Color(0xFF07101A).copy(alpha = 0.38f))
                         .clickable { onClose() }
                 )
-                LiquidGlassSurface(
+                SettingsPanelSurface(
                     modifier = Modifier
                         .fillMaxHeight()
-                        .width(332.dp),
+                        .width(348.dp),
                     shape = RoundedCornerShape(topStart = 34.dp, bottomStart = 34.dp),
-                    padding = PaddingValues(horizontal = 22.dp, vertical = 24.dp),
-                    highlightAlpha = 0.26f
+                    padding = PaddingValues(horizontal = 22.dp, vertical = 24.dp)
                 ) {
                     Column(
                         modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -941,10 +1073,9 @@ private fun SettingsMenu(
                         SettingToggle(stringResource(id = R.string.settings_24_hour), state.is24HourFormat, onToggle24HourFormat)
                         HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
                         SettingToggle(stringResource(id = R.string.settings_sound_button), state.isSoundButtonVisible, onToggleSound)
-                        LiquidGlassSurface(
+                        SettingsCardSurface(
                             shape = RoundedCornerShape(24.dp),
-                            padding = PaddingValues(16.dp),
-                            highlightAlpha = 0.18f
+                            padding = PaddingValues(16.dp)
                         ) {
                             Column {
                                 Text(
@@ -956,7 +1087,7 @@ private fun SettingsMenu(
                                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                     items(state.allFonts) { fontItem ->
                                         val isSelected = fontItem.name == state.selectedFont.name
-                                        LiquidGlassChip(
+                                        SettingsChip(
                                             selected = isSelected,
                                             onClick = { onSelectFont(fontItem) }
                                         ) {
@@ -972,7 +1103,7 @@ private fun SettingsMenu(
                             }
                         }
                         Spacer(modifier = Modifier.height(6.dp))
-                        LiquidGlassChip(
+                        SettingsChip(
                             selected = true,
                             onClick = onClose,
                             modifier = Modifier.align(Alignment.End)
@@ -997,10 +1128,9 @@ private fun ParticleWeatherSelector(
     onToggleAuto: (Boolean) -> Unit,
     onSelectWeather: (ParticleWeather) -> Unit
 ) {
-    LiquidGlassSurface(
+    SettingsCardSurface(
         shape = RoundedCornerShape(24.dp),
-        padding = PaddingValues(16.dp),
-        highlightAlpha = 0.18f
+        padding = PaddingValues(16.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
@@ -1011,7 +1141,7 @@ private fun ParticleWeatherSelector(
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
                     val isSelected = isAuto
-                    LiquidGlassChip(
+                    SettingsChip(
                         selected = isSelected,
                         onClick = { onToggleAuto(true) }
                     ) {
@@ -1024,7 +1154,7 @@ private fun ParticleWeatherSelector(
                 }
                 items(ParticleWeather.entries) { weather ->
                     val isSelected = !isAuto && weather == selected
-                    LiquidGlassChip(
+                    SettingsChip(
                         selected = isSelected,
                         onClick = { onSelectWeather(weather) }
                     ) {
@@ -1057,10 +1187,9 @@ private fun ParticleWeather.label(): String {
 
 @Composable
 private fun SettingToggle(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    LiquidGlassSurface(
+    SettingsCardSurface(
         shape = RoundedCornerShape(22.dp),
-        padding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
-        highlightAlpha = 0.18f
+        padding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1091,7 +1220,8 @@ private fun ClockContent(
     onPlayAudio: () -> Unit,
     onToggleSettings: () -> Unit,
     mainDisplayModifier: Modifier = Modifier,
-    onTimeBoundsChanged: (RectF) -> Unit
+    onTimeBoundsChanged: (RectF) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
     val screenWidth = configuration.screenWidthDp
@@ -1102,6 +1232,7 @@ private fun ClockContent(
 
     Box(
         modifier = Modifier
+            .then(modifier)
             .fillMaxSize()
             .alpha(alpha)
             .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
