@@ -10,6 +10,7 @@ import android.graphics.SurfaceTexture
 import android.opengl.Matrix
 import android.os.Handler
 import android.os.Looper
+import android.view.MotionEvent
 import android.view.Choreographer
 import android.view.Surface
 import android.view.TextureView
@@ -72,7 +73,7 @@ fun FilamentCatOverlay(
 }
 
 private class FilamentCatsOverlayView(context: Context) : FrameLayout(context) {
-    private val textureView = TextureView(context)
+    private val textureView = AccessibleTextureView(context)
     private val renderer = CatFilamentRenderer(context)
     private val mainHandler = Handler(Looper.getMainLooper())
     private var isAttached = false
@@ -131,7 +132,12 @@ private class FilamentCatsOverlayView(context: Context) : FrameLayout(context) {
         textureView.isClickable = false
         textureView.isFocusable = false
         textureView.isFocusableInTouchMode = false
-        textureView.setOnTouchListener { _, _ -> false }
+        textureView.setOnTouchListener { view, event ->
+            if (event.action == MotionEvent.ACTION_UP) {
+                view.performClick()
+            }
+            false
+        }
         textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
             override fun onSurfaceTextureAvailable(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
                 renderSurface?.release()
@@ -237,6 +243,13 @@ private class FilamentCatsOverlayView(context: Context) : FrameLayout(context) {
         if (!receiverRegistered) return
         runCatching { context.unregisterReceiver(clockReceiver) }
         receiverRegistered = false
+    }
+}
+
+private class AccessibleTextureView(context: Context) : TextureView(context) {
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
     }
 }
 

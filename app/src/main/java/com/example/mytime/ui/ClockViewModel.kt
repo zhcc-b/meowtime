@@ -17,6 +17,8 @@ import android.location.LocationManager
 import android.media.MediaPlayer
 import android.os.BatteryManager
 import android.os.Build
+import android.os.CancellationSignal
+import android.os.Looper
 import android.os.SystemClock
 import android.text.format.DateFormat
 import androidx.compose.ui.geometry.Offset
@@ -39,8 +41,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
-import org.json.JSONObject
-import java.net.URL
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
@@ -70,8 +70,9 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     val uiState: StateFlow<ClockState> = _uiState.asStateFlow()
 
     private var mediaPlayer: MediaPlayer? = null
-    private val context = application.applicationContext
-    private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+    private val appContext: Context
+        get() = getApplication<Application>().applicationContext
+    private val sensorManager = application.applicationContext.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
     private val locale = Locale.getDefault()
     private val dateFormatter = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(locale)
@@ -83,6 +84,9 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private var smoothParallax = Offset.Zero
     private var lastSensorUpdateTimeMs = 0L
     private var locationJob: Job? = null
+    private var tickerJob: Job? = null
+    private var sensorRegistered = false
+    private var isAppActive = false
 
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -95,18 +99,19 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     }
 
     init {
-        _uiState.update { it.copy(is24HourFormat = DateFormat.is24HourFormat(context)) }
-        context.registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-        observePersistedSettings()
-        startClockTicker()
-        rotationSensor?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI)
+        _uiState.update {
+            it.copy(
+                is24HourFormat = DateFormat.is24HourFormat(appContext),
+                location = appContext.getString(R.string.location_loading)
+            )
         }
+        appContext.registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        observePersistedSettings()
     }
 
     private fun observePersistedSettings() {
         viewModelScope.launch {
-            context.dataStore.data.collect { preferences ->
+            appContext.dataStore.data.collect { preferences ->
                 _uiState.update { state ->
                     val selectedFontName = preferences[PreferenceKeys.selectedFont]
                     val selectedFont = AvailableClockFonts.find { it.name == selectedFontName } ?: state.selectedFont
@@ -130,7 +135,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     }
 
     private fun startClockTicker() {
-        viewModelScope.launch(Dispatchers.Default) {
+        if (tickerJob?.isActive == true) return
+        tickerJob = viewModelScope.launch(Dispatchers.Default) {
             var lastMinute = -1
             var nextWeatherChangeEpochSec = 0L
             var activeWeather = _uiState.value.particleWeather
@@ -206,6 +212,11 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         }
     }
 
+    private fun stopClockTicker() {
+        tickerJob?.cancel()
+        tickerJob = null
+    }
+
     private fun pickRandomWeather(excluding: ParticleWeather, allowBrightWeather: Boolean = true): ParticleWeather {
         val candidates = if (allowBrightWeather) {
             ParticleWeather.entries
@@ -245,15 +256,17 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     fun fetchLocation(hasLocationPermission: Boolean) {
         locationJob?.cancel()
         locationJob = viewModelScope.launch(Dispatchers.IO) {
-            val city = (if (hasLocationPermission) fetchCityFromDeviceLocation() else null) ?: fetchCityByIp()
-            _uiState.update { it.copy(location = city?.uppercase(locale) ?: "OFFLINE") }
+            val city = if (hasLocationPermission) fetchCityFromDeviceLocation() else null
+            _uiState.update {
+                it.copy(location = city?.uppercase(locale) ?: appContext.getString(R.string.location_unavailable))
+            }
         }
     }
 
     @SuppressLint("MissingPermission")
     private suspend fun fetchCityFromDeviceLocation(): String? {
         return runCatching {
-            val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val locationManager = appContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
             val providers = locationManager.getProviders(true)
             var bestLocation: Location? = null
             for (provider in providers) {
@@ -262,14 +275,63 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                     bestLocation = location
                 }
             }
-            bestLocation
+            bestLocation ?: requestFreshLocation(locationManager)
         }.getOrNull()?.let { location ->
             reverseGeocodeCity(location)
         }
     }
 
+    @SuppressLint("MissingPermission")
+    private suspend fun requestFreshLocation(locationManager: LocationManager): Location? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            suspendCancellableCoroutine { continuation ->
+                val cancellationSignal = CancellationSignal()
+                continuation.invokeOnCancellation { cancellationSignal.cancel() }
+                locationManager.getCurrentLocation(
+                    LocationManager.FUSED_PROVIDER,
+                    cancellationSignal,
+                    appContext.mainExecutor
+                ) { location ->
+                    if (continuation.isActive) {
+                        continuation.resume(location)
+                    }
+                }
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            suspendCancellableCoroutine { continuation ->
+                val criteria = android.location.Criteria().apply {
+                    accuracy = android.location.Criteria.ACCURACY_COARSE
+                }
+                val provider = locationManager.getBestProvider(criteria, true)
+                    ?: locationManager.getProviders(true).firstOrNull()
+                if (provider == null) {
+                    continuation.resume(null)
+                    return@suspendCancellableCoroutine
+                }
+                val listener = object : android.location.LocationListener {
+                    override fun onLocationChanged(location: Location) {
+                        locationManager.removeUpdates(this)
+                        if (continuation.isActive) {
+                            continuation.resume(location)
+                        }
+                    }
+
+                    @Deprecated("Deprecated in Java")
+                    override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) = Unit
+
+                    override fun onProviderEnabled(provider: String) = Unit
+
+                    override fun onProviderDisabled(provider: String) = Unit
+                }
+                continuation.invokeOnCancellation { locationManager.removeUpdates(listener) }
+                locationManager.requestSingleUpdate(provider, listener, Looper.getMainLooper())
+            }
+        }
+    }
+
     private suspend fun reverseGeocodeCity(location: Location): String? {
-        val geocoder = Geocoder(context, locale)
+        val geocoder = Geocoder(appContext, locale)
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             suspendCancellableCoroutine { continuation ->
                 geocoder.getFromLocation(
@@ -303,21 +365,9 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         }
     }
 
-    private fun fetchCityByIp(): String? {
-        return runCatching {
-            val response = URL("https://ipwho.is/").readText()
-            val json = JSONObject(response)
-            if (json.has("success") && !json.optBoolean("success")) {
-                null
-            } else {
-                json.optString("city").takeIf { it.isNotBlank() }
-            }
-        }.getOrNull()
-    }
-
     fun playAudio() {
         if (mediaPlayer == null) {
-            mediaPlayer = MediaPlayer.create(context, R.raw.audio_file)
+            mediaPlayer = MediaPlayer.create(appContext, R.raw.audio_file)
         }
         mediaPlayer?.apply {
             if (isPlaying) {
@@ -403,9 +453,38 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         persistSetting { this[PreferenceKeys.is24Hour] = enabled }
     }
 
+    fun setAppActive(active: Boolean) {
+        if (isAppActive == active) return
+        isAppActive = active
+        if (active) {
+            startClockTicker()
+            registerRotationSensorIfNeeded()
+        } else {
+            stopClockTicker()
+            unregisterRotationSensor()
+        }
+    }
+
+    private fun registerRotationSensorIfNeeded() {
+        if (sensorRegistered) return
+        rotationSensor?.let {
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI)
+            sensorRegistered = true
+        }
+    }
+
+    private fun unregisterRotationSensor() {
+        if (!sensorRegistered) return
+        sensorManager.unregisterListener(this)
+        sensorRegistered = false
+        basePitch = null
+        baseRoll = null
+        smoothParallax = Offset.Zero
+    }
+
     private fun persistSetting(block: MutablePreferences.() -> Unit) {
         viewModelScope.launch {
-            context.dataStore.edit { preferences ->
+            appContext.dataStore.edit { preferences ->
                 block(preferences)
             }
         }
@@ -454,8 +533,9 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     override fun onCleared() {
-        sensorManager.unregisterListener(this)
-        runCatching { context.unregisterReceiver(batteryReceiver) }
+        stopClockTicker()
+        unregisterRotationSensor()
+        runCatching { appContext.unregisterReceiver(batteryReceiver) }
         locationJob?.cancel()
         mediaPlayer?.release()
         mediaPlayer = null
