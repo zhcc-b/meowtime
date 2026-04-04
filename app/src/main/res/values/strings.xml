@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">Mytime</string>
     <string name="settings_title">Settings</string>
+    <string name="settings_subtitle">Liquid controls</string>
     <string name="settings_gyroscope">Gyroscope 3D</string>
     <string name="settings_particles">Particle Background</string>
     <string name="settings_particle_weather">Particle Weather</string>
@@ -23,4 +24,12 @@
     <string name="weather_blizzard">Blizzard</string>
     <string name="cd_settings">Open settings</string>
     <string name="cd_play_sound">Play sound</string>
+    <string name="location_permission_title">Location access</string>
+    <string name="location_permission_message">Allow location access to show your current city on the clock. We only use on-device location and no longer fall back to third-party IP lookup.</string>
+    <string name="location_permission_allow">Allow</string>
+    <string name="location_permission_not_now">Not now</string>
+    <string name="location_permission_open_settings">Open settings</string>
+    <string name="location_permission_settings_message">Location access has been denied for this app. Open system settings if you want to enable it later.</string>
+    <string name="location_unavailable">LOCATION OFF</string>
+    <string name="location_loading">LOCATING…</string>
 </resources>

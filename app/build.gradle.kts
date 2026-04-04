@@ -30,6 +30,7 @@ android {
         }
     }
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
@@ -45,6 +46,7 @@ kotlin {
 }
 
 dependencies {
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
@@ -59,10 +61,10 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.material3)
     implementation(libs.google.material)
-    implementation("io.coil-kt:coil-compose:2.7.0")
-    implementation("com.google.android.filament:filament-android:1.66.0")
-    implementation("com.google.android.filament:gltfio-android:1.66.0")
-    implementation("com.google.android.filament:filament-utils-android:1.66.0")
+    implementation(libs.coil.compose)
+    implementation(libs.filament.android)
+    implementation(libs.filament.gltfio.android)
+    implementation(libs.filament.utils.android)
     implementation(libs.androidx.constraintlayout)
     implementation(libs.androidx.appcompat)
     testImplementation(libs.junit)

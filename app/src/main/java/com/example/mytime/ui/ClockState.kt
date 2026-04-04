@@ -14,7 +14,7 @@ data class ClockState(
     val date: String = "--",
     val dayOfWeek: String = "--",
     val batteryLevel: String = "--",
-    val location: String = "Loading...",
+    val location: String = "--",
     val backgroundRes: Int? = null,
     val backgroundUrl: String? = null,
     

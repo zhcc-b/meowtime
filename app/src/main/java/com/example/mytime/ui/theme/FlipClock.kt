@@ -1,6 +1,7 @@
 package com.example.mytime.ui.theme
 
 import android.graphics.RectF
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
@@ -1021,11 +1022,13 @@ private fun SettingsMenu(
     onToggle24HourFormat: (Boolean) -> Unit
 ) {
     if (visible) {
-        Box(
+        BackHandler(onBack = onClose)
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xFF06111D).copy(alpha = 0.58f))
         ) {
+            val drawerWidth = (maxWidth * 0.88f).coerceAtMost(348.dp)
             Row(modifier = Modifier.fillMaxSize()) {
                 Box(
                     modifier = Modifier
@@ -1036,7 +1039,7 @@ private fun SettingsMenu(
                 SettingsPanelSurface(
                     modifier = Modifier
                         .fillMaxHeight()
-                        .width(348.dp),
+                        .width(drawerWidth),
                     shape = RoundedCornerShape(topStart = 34.dp, bottomStart = 34.dp),
                     padding = PaddingValues(horizontal = 22.dp, vertical = 24.dp)
                 ) {
@@ -1051,7 +1054,7 @@ private fun SettingsMenu(
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            text = "Liquid controls",
+                            text = stringResource(id = R.string.settings_subtitle),
                             color = LiquidGlassText.copy(alpha = 0.54f),
                             fontSize = 12.sp,
                             letterSpacing = 1.sp

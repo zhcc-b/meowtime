@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">我的时钟</string>
     <string name="settings_title">设置</string>
+    <string name="settings_subtitle">液态控制</string>
     <string name="settings_gyroscope">陀螺仪 3D</string>
     <string name="settings_particles">粒子背景</string>
     <string name="settings_particle_weather">粒子天气</string>
@@ -23,4 +24,12 @@
     <string name="weather_blizzard">暴雪</string>
     <string name="cd_settings">打开设置</string>
     <string name="cd_play_sound">播放声音</string>
+    <string name="location_permission_title">位置权限</string>
+    <string name="location_permission_message">允许读取位置后，时钟会显示当前城市。现在只使用设备本地定位，不再默认调用第三方 IP 定位服务。</string>
+    <string name="location_permission_allow">允许</string>
+    <string name="location_permission_not_now">暂不</string>
+    <string name="location_permission_open_settings">打开设置</string>
+    <string name="location_permission_settings_message">这个应用的位置权限已被拒绝。若之后想启用，请前往系统设置手动开启。</string>
+    <string name="location_unavailable">位置已关闭</string>
+    <string name="location_loading">定位中…</string>
 </resources>
