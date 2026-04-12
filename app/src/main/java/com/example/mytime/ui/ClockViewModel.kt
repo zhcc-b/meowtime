@@ -100,6 +100,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private var lastSensorUpdateTimeMs = 0L
     private var locationJob: Job? = null
     private var tickerJob: Job? = null
+    private var edgeLightJob: Job? = null
     private var sensorRegistered = false
     private var isAppActive = false
     private var lastHourlyChimeMarker = ""
@@ -223,6 +224,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                 }
 
                 var shouldPlayReminder = false
+                var edgeLightMode: EdgeLightMode? = null
+                var edgeLightDurationMs: Long? = null
                 _uiState.update { state ->
                     var workingState = state
                     if (workingState.activeThemePreset != resolvedPreset) {
@@ -237,6 +240,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                     if (modeTick.triggerSound) {
                         shouldPlayReminder = true
                     }
+                    edgeLightMode = modeTick.edgeLightMode
+                    edgeLightDurationMs = modeTick.edgeLightDurationMs
 
                     val burnInOffset = when {
                         !workingState.isBurnInProtectionEnabled -> Offset.Zero
@@ -298,6 +303,9 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                 if (shouldPlayReminder) {
                     playReminderCue()
                 }
+                if (edgeLightMode != null) {
+                    showEdgeLight(edgeLightMode!!, edgeLightDurationMs)
+                }
                 if (currentMinute != lastMinute) {
                     lastMinute = currentMinute
                 }
@@ -350,7 +358,9 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private data class ModeTickResult(
         val state: ClockState,
         val message: String? = null,
-        val triggerSound: Boolean = false
+        val triggerSound: Boolean = false,
+        val edgeLightMode: EdgeLightMode? = null,
+        val edgeLightDurationMs: Long? = null
     )
 
     private fun advanceModeState(state: ClockState): ModeTickResult {
@@ -370,7 +380,9 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                                 completedPomodoros = state.completedPomodoros + 1
                             ),
                             message = appContext.getString(R.string.companion_focus_done),
-                            triggerSound = true
+                            triggerSound = true,
+                            edgeLightMode = EdgeLightMode.TIMER_ALERT,
+                            edgeLightDurationMs = 5_000L
                         )
                     } else {
                         ModeTickResult(
@@ -380,7 +392,9 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                                 completedBreaks = state.completedBreaks + 1
                             ),
                             message = appContext.getString(R.string.companion_break_done),
-                            triggerSound = state.breakReminderEnabled
+                            triggerSound = true,
+                            edgeLightMode = EdgeLightMode.TIMER_ALERT,
+                            edgeLightDurationMs = 5_000L
                         )
                     }
                 } else {
@@ -401,7 +415,9 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                             timerRunning = false
                         ),
                         message = appContext.getString(R.string.companion_countdown_done),
-                        triggerSound = true
+                        triggerSound = true,
+                        edgeLightMode = EdgeLightMode.TIMER_ALERT,
+                        edgeLightDurationMs = 5_000L
                     )
                 } else {
                     ModeTickResult(state.copy(countdownRemainingSeconds = nextRemaining))
@@ -413,7 +429,9 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                 ModeTickResult(
                     state.copy(stopwatchElapsedSeconds = nextElapsed),
                     message = if (needsBreakNudge) appContext.getString(R.string.companion_break_nudge) else null,
-                    triggerSound = needsBreakNudge
+                    triggerSound = false,
+                    edgeLightMode = if (needsBreakNudge) EdgeLightMode.BREAK_REMINDER else null,
+                    edgeLightDurationMs = if (needsBreakNudge) 10_000L else null
                 )
             }
         }
@@ -619,10 +637,14 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                 )
             }
         }
+        if (mode != ClockMode.STOPWATCH) {
+            showEdgeLight(EdgeLightMode.NONE)
+        }
         persistSetting { this[PreferenceKeys.clockMode] = mode.name }
     }
 
     fun toggleModeRunning() {
+        var nextState: ClockState? = null
         _uiState.update { state ->
             if (state.clockMode == ClockMode.CLOCK) {
                 state
@@ -634,7 +656,14 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                     } else {
                         appContext.getString(R.string.companion_timer_paused)
                     }
-                )
+                ).also { nextState = it }
+            }
+        }
+        nextState?.let { updated ->
+            when (updated.clockMode) {
+                ClockMode.STOPWATCH -> showEdgeLight(if (updated.timerRunning) EdgeLightMode.STOPWATCH_ACTIVE else EdgeLightMode.NONE)
+                ClockMode.CLOCK -> Unit
+                else -> if (!updated.timerRunning) showEdgeLight(EdgeLightMode.NONE)
             }
         }
     }
@@ -661,6 +690,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                 )
             }
         }
+        showEdgeLight(EdgeLightMode.NONE)
     }
 
     fun adjustPomodoroFocus(delta: Int) {
@@ -788,6 +818,25 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         persistSetting { this[PreferenceKeys.themePreset] = preset.name }
     }
 
+    private fun showEdgeLight(mode: EdgeLightMode, durationMs: Long? = null) {
+        edgeLightJob?.cancel()
+        _uiState.update { it.copy(edgeLightMode = mode) }
+        if (mode != EdgeLightMode.NONE && durationMs != null) {
+            edgeLightJob = viewModelScope.launch {
+                delay(durationMs)
+                _uiState.update { state ->
+                    if (state.clockMode == ClockMode.STOPWATCH && state.timerRunning) {
+                        state.copy(edgeLightMode = EdgeLightMode.STOPWATCH_ACTIVE)
+                    } else {
+                        state.copy(edgeLightMode = EdgeLightMode.NONE)
+                    }
+                }
+            }
+        } else {
+            edgeLightJob = null
+        }
+    }
+
     fun toggleWhiteNoise(enabled: Boolean) {
         _uiState.update { it.copy(whiteNoiseEnabled = enabled) }
         if (enabled) whiteNoisePlayer.start() else whiteNoisePlayer.stop()
@@ -886,6 +935,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     override fun onCleared() {
+        edgeLightJob?.cancel()
         stopClockTicker()
         unregisterRotationSensor()
         runCatching { appContext.unregisterReceiver(batteryReceiver) }

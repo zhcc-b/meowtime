@@ -63,6 +63,7 @@ data class ClockState(
     val selectedThemePreset: ThemePreset = ThemePreset.AUTO,
     val activeThemePreset: ThemePreset = ThemePreset.SERENE,
     val whiteNoiseEnabled: Boolean = false,
+    val edgeLightMode: EdgeLightMode = EdgeLightMode.NONE,
 
     // 视差位移 (由陀螺仪控制)
     val parallaxOffset: Offset = Offset.Zero,

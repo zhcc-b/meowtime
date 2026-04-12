@@ -18,6 +18,7 @@
     <string name="settings_break_reminder">Break Reminder</string>
     <string name="settings_theme_preset">Theme Preset</string>
     <string name="settings_theme_active">Active: %1$s</string>
+    <string name="tap_anywhere_to_close">Tap anywhere to close</string>
     <string name="current_preset_label">Current Preset: %1$s Mode</string>
     <string name="current_preset_compact">%1$s Preset</string>
     <string name="seconds_label">Seconds</string>
@@ -28,6 +29,13 @@
     <string name="theme_playful">Playful</string>
     <string name="theme_serene">Serene</string>
     <string name="theme_night">Night</string>
+    <string name="theme_info_auto">Auto follows the time of day and switches between focus, playful, serene, and night looks for you.</string>
+    <string name="theme_info_focus">Focus keeps the clock cleaner and more work-oriented, with a steadier atmosphere and less playful noise.</string>
+    <string name="theme_info_playful">Playful leans brighter and more animated, with more personality in the ambient background and companion layer.</string>
+    <string name="theme_info_serene">Serene is the balanced ambient mode: calm, readable, and soft without feeling too quiet.</string>
+    <string name="theme_info_night">Night dims the scene, reduces visual pressure, and keeps the clock feeling quieter for late hours.</string>
+    <string name="break_reminder_info_on">Break reminders stay silent now. Instead, a soft edge marquee runs around the screen for 10 seconds when it is time to step back.</string>
+    <string name="break_reminder_info_off">Break reminders are off. Stopwatch nudges and other long-session rest prompts will stay quiet until you turn this back on.</string>
     <string name="mode_clock">Clock</string>
     <string name="mode_pomodoro">Pomodoro</string>
     <string name="mode_countdown">Countdown</string>
