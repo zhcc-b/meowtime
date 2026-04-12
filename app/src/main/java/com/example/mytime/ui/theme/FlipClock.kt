@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -58,6 +59,7 @@ import com.example.mytime.R
 import com.example.mytime.ui.ClockMode
 import com.example.mytime.ui.ClockFont
 import com.example.mytime.ui.ClockState
+import com.example.mytime.ui.EdgeLightMode
 import com.example.mytime.ui.ParticleWeather
 import com.example.mytime.ui.PomodoroPhase
 import com.example.mytime.ui.ThemePreset
@@ -102,8 +104,18 @@ fun FlipClockScreen(
 ) {
     val currentFont = state.selectedFont.family
     var timeRect by remember { mutableStateOf(RectF()) }
+    var overlayInfo by remember { mutableStateOf<OverlayInfo?>(null) }
     val settingsDim = if (state.isSettingsVisible) 0.34f else 1f
     val safeParallax = state.parallaxOffset.sanitize()
+    val themePresetTitle = stringResource(id = R.string.settings_theme_preset)
+    val breakReminderTitle = stringResource(id = R.string.settings_break_reminder)
+    val autoPresetInfo = stringResource(id = R.string.theme_info_auto)
+    val focusPresetInfo = stringResource(id = R.string.theme_info_focus)
+    val playfulPresetInfo = stringResource(id = R.string.theme_info_playful)
+    val serenePresetInfo = stringResource(id = R.string.theme_info_serene)
+    val nightPresetInfo = stringResource(id = R.string.theme_info_night)
+    val breakReminderOnInfo = stringResource(id = R.string.break_reminder_info_on)
+    val breakReminderOffInfo = stringResource(id = R.string.break_reminder_info_off)
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 1. 背景层
@@ -208,10 +220,40 @@ fun FlipClockScreen(
             onToggleDailyAlarm = onToggleDailyAlarm,
             onAdjustDailyAlarmHour = onAdjustDailyAlarmHour,
             onAdjustDailyAlarmMinute = onAdjustDailyAlarmMinute,
-            onToggleBreakReminder = onToggleBreakReminder,
-            onSetThemePreset = onSetThemePreset,
+            onToggleBreakReminder = { enabled ->
+                onToggleBreakReminder(enabled)
+                overlayInfo = OverlayInfo(
+                    title = breakReminderTitle,
+                    body = if (enabled) breakReminderOnInfo else breakReminderOffInfo
+                )
+            },
+            onSetThemePreset = { preset ->
+                onSetThemePreset(preset)
+                overlayInfo = OverlayInfo(
+                    title = themePresetTitle,
+                    body = when (preset) {
+                        ThemePreset.AUTO -> autoPresetInfo
+                        ThemePreset.FOCUS -> focusPresetInfo
+                        ThemePreset.PLAYFUL -> playfulPresetInfo
+                        ThemePreset.SERENE -> serenePresetInfo
+                        ThemePreset.NIGHT -> nightPresetInfo
+                    }
+                )
+            },
             onToggleWhiteNoise = onToggleWhiteNoise
         )
+
+        EdgeLightOverlay(
+            mode = state.edgeLightMode,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        overlayInfo?.let { info ->
+            ExplanationOverlay(
+                info = info,
+                onDismiss = { overlayInfo = null }
+            )
+        }
     }
 }
 
@@ -274,6 +316,198 @@ private val LiquidGlassTint = Color(0xFFD7E8FF)
 private val LiquidGlassCool = Color(0xFF9CC7FF)
 private val LiquidGlassShadow = Color(0xFF09111C)
 private val LiquidGlassText = Color(0xFFF7FBFF)
+
+private data class OverlayInfo(
+    val title: String,
+    val body: String
+)
+
+@Composable
+private fun ExplanationOverlay(
+    info: OverlayInfo,
+    onDismiss: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xCC07111A))
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.Center
+    ) {
+        SettingsPanelSurface(
+            modifier = Modifier
+                .padding(horizontal = 26.dp)
+                .fillMaxWidth(0.82f)
+                .clickable(onClick = onDismiss),
+            shape = RoundedCornerShape(30.dp),
+            padding = PaddingValues(horizontal = 22.dp, vertical = 20.dp)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = info.title,
+                    color = LiquidGlassText,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = UiFontFamily
+                )
+                Text(
+                    text = info.body,
+                    color = LiquidGlassText.copy(alpha = 0.78f),
+                    fontSize = 14.sp,
+                    lineHeight = 21.sp,
+                    fontFamily = UiFontFamily
+                )
+                Text(
+                    text = stringResource(id = R.string.tap_anywhere_to_close),
+                    color = LiquidGlassText.copy(alpha = 0.48f),
+                    fontSize = 12.sp,
+                    fontFamily = UiFontFamily
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EdgeLightOverlay(
+    mode: EdgeLightMode,
+    modifier: Modifier = Modifier
+) {
+    if (mode == EdgeLightMode.NONE) return
+
+    val transition = rememberInfiniteTransition(label = "edge_light")
+    val colorShift by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(
+                durationMillis = when (mode) {
+                    EdgeLightMode.BREAK_REMINDER -> 4200
+                    EdgeLightMode.TIMER_ALERT -> 2600
+                    EdgeLightMode.STOPWATCH_ACTIVE -> 6200
+                    EdgeLightMode.NONE -> 4000
+                },
+                easing = LinearEasing
+            )
+        ),
+        label = "edge_color_shift"
+    )
+    val pulse by transition.animateFloat(
+        initialValue = 0.84f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(
+                durationMillis = when (mode) {
+                    EdgeLightMode.BREAK_REMINDER -> 1050
+                    EdgeLightMode.TIMER_ALERT -> 800
+                    EdgeLightMode.STOPWATCH_ACTIVE -> 1800
+                    EdgeLightMode.NONE -> 1000
+                },
+                easing = EaseInOutSine
+            ),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "edge_pulse"
+    )
+    val overlayAlpha = when (mode) {
+        EdgeLightMode.BREAK_REMINDER -> 0.82f
+        EdgeLightMode.TIMER_ALERT -> 1f
+        EdgeLightMode.STOPWATCH_ACTIVE -> 0.56f
+        EdgeLightMode.NONE -> 0f
+    }
+    val palette = when (mode) {
+        EdgeLightMode.BREAK_REMINDER -> listOf(
+            Color(0xFFFF7DB3),
+            Color(0xFFFFC46A),
+            Color(0xFF8FD8FF),
+            Color(0xFFC6A3FF)
+        )
+        EdgeLightMode.TIMER_ALERT -> listOf(
+            Color(0xFFFF8A8A),
+            Color(0xFFFFD36E),
+            Color(0xFF8EE3FF),
+            Color(0xFFB896FF)
+        )
+        EdgeLightMode.STOPWATCH_ACTIVE -> listOf(
+            Color(0xFF8FD8FF),
+            Color(0xFFBCA8FF),
+            Color(0xFFFFB6D9),
+            Color(0xFF91E8FF)
+        )
+        EdgeLightMode.NONE -> emptyList()
+    }
+
+    fun shiftedStops(colors: List<Color>, alphaMultiplier: Float): Array<Pair<Float, Color>> {
+        fun safeAlpha(value: Float) = value.coerceIn(0f, 1f)
+        val base = listOf(
+            0f to colors[0].copy(alpha = safeAlpha(alphaMultiplier * overlayAlpha * pulse)),
+            0.25f to colors[1].copy(alpha = safeAlpha(alphaMultiplier * overlayAlpha * pulse)),
+            0.5f to colors[2].copy(alpha = safeAlpha(alphaMultiplier * overlayAlpha * pulse)),
+            0.75f to colors[3].copy(alpha = safeAlpha(alphaMultiplier * overlayAlpha * pulse)),
+            1f to colors[0].copy(alpha = safeAlpha(alphaMultiplier * overlayAlpha * pulse))
+        )
+        val shifted = buildList {
+            base.forEach { (stop, color) ->
+                val shiftedStop = stop + colorShift
+                add((shiftedStop % 1f) to color)
+                add((((shiftedStop - 1f) % 1f) + 1f) to color)
+            }
+        }.sortedBy { it.first }
+        return shifted.toTypedArray()
+    }
+
+    Canvas(modifier = modifier) {
+        fun safeAlpha(value: Float): Float = value.coerceIn(0f, 1f)
+        val inset = 8.dp.toPx()
+        val outerStroke = when (mode) {
+            EdgeLightMode.TIMER_ALERT -> 12.dp.toPx()
+            EdgeLightMode.BREAK_REMINDER -> 11.dp.toPx()
+            EdgeLightMode.STOPWATCH_ACTIVE -> 8.dp.toPx()
+            EdgeLightMode.NONE -> 0f
+        }
+        val glowStroke = outerStroke * 1.9f
+        val coreStroke = outerStroke * 0.42f
+        val cornerRadiusPx = 38.dp.toPx()
+        val corner = CornerRadius(cornerRadiusPx, cornerRadiusPx)
+        val rectTopLeft = Offset(inset, inset)
+        val rectSize = Size(size.width - inset * 2f, size.height - inset * 2f)
+
+        drawRoundRect(
+            brush = Brush.sweepGradient(
+                colorStops = shiftedStops(palette, 0.34f),
+                center = center
+            ),
+            topLeft = rectTopLeft,
+            size = rectSize,
+            cornerRadius = corner,
+            style = Stroke(width = glowStroke)
+        )
+        drawRoundRect(
+            brush = Brush.sweepGradient(
+                colorStops = shiftedStops(palette, 0.92f),
+                center = center
+            ),
+            topLeft = rectTopLeft,
+            size = rectSize,
+            cornerRadius = corner,
+            style = Stroke(width = outerStroke)
+        )
+        drawRoundRect(
+            color = Color.White.copy(alpha = safeAlpha(0.58f * overlayAlpha * pulse)),
+            topLeft = rectTopLeft,
+            size = rectSize,
+            cornerRadius = corner,
+            style = Stroke(width = coreStroke)
+        )
+        drawRoundRect(
+            color = Color.White.copy(alpha = safeAlpha(0.10f * overlayAlpha)),
+            topLeft = rectTopLeft,
+            size = rectSize,
+            cornerRadius = corner,
+            style = Stroke(width = 1.dp.toPx())
+        )
+    }
+}
 
 private fun AtmosphereBlob(weather: ParticleWeather): AtmosphereBlob {
     return when (weather) {
@@ -2036,6 +2270,18 @@ private fun RunningControlOrb(
             val innerRingRadius = baseRadius * 0.74f
 
             drawCircle(
+                brush = Brush.radialGradient(
+                    listOf(
+                        Color(0xFFBFE3FF).copy(alpha = 0.10f),
+                        Color.Transparent
+                    ),
+                    center = center,
+                    radius = outerRadius * 1.1f
+                ),
+                radius = outerRadius * 1.1f,
+                center = center
+            )
+            drawCircle(
                 color = Color.White.copy(alpha = 0.06f),
                 radius = outerRadius,
                 center = center,
@@ -2072,6 +2318,15 @@ private fun RunningControlOrb(
                 style = Stroke(width = 2.dp.toPx())
             )
             drawArc(
+                color = Color.White.copy(alpha = 0.18f),
+                startAngle = -90f,
+                sweepAngle = 360f,
+                useCenter = false,
+                topLeft = Offset(center.x - innerRingRadius, center.y - innerRingRadius),
+                size = Size(innerRingRadius * 2f, innerRingRadius * 2f),
+                style = Stroke(width = 1.4.dp.toPx())
+            )
+            drawArc(
                 brush = Brush.sweepGradient(
                     listOf(
                         Color(0xFFDDF0FF),
@@ -2085,6 +2340,21 @@ private fun RunningControlOrb(
                 topLeft = Offset(center.x - baseRadius, center.y - baseRadius),
                 size = Size(baseRadius * 2f, baseRadius * 2f),
                 style = Stroke(width = stroke, cap = StrokeCap.Round)
+            )
+            val dotAngle = Math.toRadians((360f * progress - 90f).toDouble())
+            val dotCenter = Offset(
+                x = center.x + kotlin.math.cos(dotAngle).toFloat() * baseRadius,
+                y = center.y + kotlin.math.sin(dotAngle).toFloat() * baseRadius
+            )
+            drawCircle(
+                color = Color.White.copy(alpha = 0.92f),
+                radius = 4.dp.toPx(),
+                center = dotCenter
+            )
+            drawCircle(
+                color = Color(0xFFB9E1FF).copy(alpha = 0.46f),
+                radius = 8.dp.toPx(),
+                center = dotCenter
             )
             drawCircle(
                 brush = Brush.radialGradient(
