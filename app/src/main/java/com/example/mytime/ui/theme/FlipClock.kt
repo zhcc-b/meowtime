@@ -1,10 +1,12 @@
 package com.example.mytime.ui.theme
 
+import android.content.res.Configuration
 import android.graphics.RectF
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -33,6 +35,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -48,13 +51,18 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mytime.R
+import com.example.mytime.ui.ClockMode
 import com.example.mytime.ui.ClockFont
 import com.example.mytime.ui.ClockState
 import com.example.mytime.ui.ParticleWeather
+import com.example.mytime.ui.PomodoroPhase
+import com.example.mytime.ui.ThemePreset
 import com.example.mytime.ui.UiFontFamily
+import com.example.mytime.ui.profile
 import coil.compose.AsyncImage
 import kotlinx.coroutines.isActive
 import kotlin.math.cos
@@ -77,11 +85,25 @@ fun FlipClockScreen(
     onSelectParticleWeather: (ParticleWeather) -> Unit,
     onToggleCats: (Boolean) -> Unit,
     onToggleDynamicWallpaper: (Boolean) -> Unit,
-    onToggle24HourFormat: (Boolean) -> Unit
+    onToggle24HourFormat: (Boolean) -> Unit,
+    onSetClockMode: (ClockMode) -> Unit,
+    onToggleModeRunning: () -> Unit,
+    onResetMode: () -> Unit,
+    onAdjustPomodoroFocus: (Int) -> Unit,
+    onAdjustPomodoroBreak: (Int) -> Unit,
+    onAdjustCountdown: (Int) -> Unit,
+    onToggleHourlyChime: (Boolean) -> Unit,
+    onToggleDailyAlarm: (Boolean) -> Unit,
+    onAdjustDailyAlarmHour: (Int) -> Unit,
+    onAdjustDailyAlarmMinute: (Int) -> Unit,
+    onToggleBreakReminder: (Boolean) -> Unit,
+    onSetThemePreset: (ThemePreset) -> Unit,
+    onToggleWhiteNoise: (Boolean) -> Unit
 ) {
     val currentFont = state.selectedFont.family
     var timeRect by remember { mutableStateOf(RectF()) }
     val settingsDim = if (state.isSettingsVisible) 0.34f else 1f
+    val safeParallax = state.parallaxOffset.sanitize()
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 1. 背景层
@@ -90,13 +112,13 @@ fun FlipClockScreen(
             .graphicsLayer(
                 scaleX = 1.25f,
                 scaleY = 1.25f,
-                rotationX = (-state.parallaxOffset.y * 0.05f).coerceIn(-5f, 5f),
-                rotationY = (state.parallaxOffset.x * 0.05f).coerceIn(-5f, 5f)
+                rotationX = (-safeParallax.y * 0.05f).coerceIn(-5f, 5f),
+                rotationY = (safeParallax.x * 0.05f).coerceIn(-5f, 5f)
             )
             .offset {
                 IntOffset(
-                    (-state.parallaxOffset.x * 0.3f).roundToInt(),
-                    (-state.parallaxOffset.y * 0.3f).roundToInt()
+                    (-safeParallax.x * 0.3f).roundToInt(),
+                    (-safeParallax.y * 0.3f).roundToInt()
                 )
             }
             .alpha(if (state.isSettingsVisible) 0.24f else 0.6f)
@@ -157,6 +179,12 @@ fun FlipClockScreen(
             fontFamily = currentFont,
             onPlayAudio = onPlayAudio,
             onToggleSettings = onOpenSettings,
+            onSetClockMode = onSetClockMode,
+            onToggleModeRunning = onToggleModeRunning,
+            onResetMode = onResetMode,
+            onAdjustPomodoroFocus = onAdjustPomodoroFocus,
+            onAdjustPomodoroBreak = onAdjustPomodoroBreak,
+            onAdjustCountdown = onAdjustCountdown,
             mainDisplayModifier = mainDisplayTransform,
             onTimeBoundsChanged = { timeRect = it },
             modifier = Modifier.alpha(settingsDim)
@@ -175,7 +203,14 @@ fun FlipClockScreen(
             onSelectParticleWeather = onSelectParticleWeather,
             onToggleCats = onToggleCats,
             onToggleDynamicWallpaper = onToggleDynamicWallpaper,
-            onToggle24HourFormat = onToggle24HourFormat
+            onToggle24HourFormat = onToggle24HourFormat,
+            onToggleHourlyChime = onToggleHourlyChime,
+            onToggleDailyAlarm = onToggleDailyAlarm,
+            onAdjustDailyAlarmHour = onAdjustDailyAlarmHour,
+            onAdjustDailyAlarmMinute = onAdjustDailyAlarmMinute,
+            onToggleBreakReminder = onToggleBreakReminder,
+            onSetThemePreset = onSetThemePreset,
+            onToggleWhiteNoise = onToggleWhiteNoise
         )
     }
 }
@@ -545,6 +580,35 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawWeatherBackdrop
         topLeft = Offset(0f, size.height * 0.46f),
         size = Size(size.width, size.height * 0.54f)
     )
+
+    if (weather != ParticleWeather.SUNNY) {
+        drawNightStars(weather = weather, seconds = seconds)
+    }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawNightStars(
+    weather: ParticleWeather,
+    seconds: Float
+) {
+    val count = when (weather) {
+        ParticleWeather.SNOW -> 70
+        ParticleWeather.BLIZZARD -> 82
+        ParticleWeather.CLOUDY -> 52
+        ParticleWeather.RAIN, ParticleWeather.DRIZZLE -> 42
+        else -> 46
+    }
+    repeat(count) { index ->
+        val seed = index * 0.173f
+        val x = ((seed * 37.2f) % 1f) * size.width
+        val y = (((seed * 91.7f) % 1f) * 0.62f + 0.02f) * size.height
+        val twinkle = 0.32f + 0.28f * (0.5f + 0.5f * sin(seconds * 0.7f + index))
+        val radius = if (index % 9 == 0) 2.4f else 1.2f + (index % 3) * 0.5f
+        drawCircle(
+            color = Color.White.copy(alpha = twinkle * if (weather == ParticleWeather.BLIZZARD) 0.7f else 1f),
+            radius = radius,
+            center = Offset(x, y)
+        )
+    }
 }
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawAtmosphereBlobs(
@@ -1019,7 +1083,14 @@ private fun SettingsMenu(
     onSelectParticleWeather: (ParticleWeather) -> Unit,
     onToggleCats: (Boolean) -> Unit,
     onToggleDynamicWallpaper: (Boolean) -> Unit,
-    onToggle24HourFormat: (Boolean) -> Unit
+    onToggle24HourFormat: (Boolean) -> Unit,
+    onToggleHourlyChime: (Boolean) -> Unit,
+    onToggleDailyAlarm: (Boolean) -> Unit,
+    onAdjustDailyAlarmHour: (Int) -> Unit,
+    onAdjustDailyAlarmMinute: (Int) -> Unit,
+    onToggleBreakReminder: (Boolean) -> Unit,
+    onSetThemePreset: (ThemePreset) -> Unit,
+    onToggleWhiteNoise: (Boolean) -> Unit
 ) {
     if (visible) {
         BackHandler(onBack = onClose)
@@ -1074,8 +1145,24 @@ private fun SettingsMenu(
                         SettingToggle(stringResource(id = R.string.settings_wallpaper), state.isDynamicWallpaperEnabled, onToggleDynamicWallpaper)
                         SettingToggle(stringResource(id = R.string.settings_burnin), state.isBurnInProtectionEnabled, onToggleBurnIn)
                         SettingToggle(stringResource(id = R.string.settings_24_hour), state.is24HourFormat, onToggle24HourFormat)
+                        SettingToggle(stringResource(id = R.string.settings_white_noise), state.whiteNoiseEnabled, onToggleWhiteNoise)
                         HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
                         SettingToggle(stringResource(id = R.string.settings_sound_button), state.isSoundButtonVisible, onToggleSound)
+                        ThemePresetSelector(
+                            selected = state.selectedThemePreset,
+                            active = state.activeThemePreset,
+                            onSelect = onSetThemePreset
+                        )
+                        SettingToggle(stringResource(id = R.string.settings_hourly_chime), state.hourlyChimeEnabled, onToggleHourlyChime)
+                        SettingToggle(stringResource(id = R.string.settings_break_reminder), state.breakReminderEnabled, onToggleBreakReminder)
+                        SettingToggle(stringResource(id = R.string.settings_daily_alarm), state.dailyAlarmEnabled, onToggleDailyAlarm)
+                        AlarmTimeAdjuster(
+                            enabled = state.dailyAlarmEnabled,
+                            hour = state.dailyAlarmHour,
+                            minute = state.dailyAlarmMinute,
+                            onAdjustHour = onAdjustDailyAlarmHour,
+                            onAdjustMinute = onAdjustDailyAlarmMinute
+                        )
                         SettingsCardSurface(
                             shape = RoundedCornerShape(24.dp),
                             padding = PaddingValues(16.dp)
@@ -1174,6 +1261,79 @@ private fun ParticleWeatherSelector(
 }
 
 @Composable
+private fun ThemePresetSelector(
+    selected: ThemePreset,
+    active: ThemePreset,
+    onSelect: (ThemePreset) -> Unit
+) {
+    SettingsCardSurface(
+        shape = RoundedCornerShape(24.dp),
+        padding = PaddingValues(16.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                stringResource(id = R.string.settings_theme_preset),
+                color = LiquidGlassText.copy(alpha = 0.68f),
+                fontSize = 13.sp
+            )
+            Text(
+                text = stringResource(id = R.string.settings_theme_active, active.label()),
+                color = LiquidGlassText.copy(alpha = 0.50f),
+                fontSize = 11.sp,
+                fontFamily = UiFontFamily
+            )
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(ThemePreset.entries.toList()) { preset ->
+                    SettingsChip(selected = preset == selected, onClick = { onSelect(preset) }) {
+                        Text(
+                            text = preset.label(),
+                            color = LiquidGlassText,
+                            fontSize = 12.sp,
+                            fontFamily = UiFontFamily
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlarmTimeAdjuster(
+    enabled: Boolean,
+    hour: Int,
+    minute: Int,
+    onAdjustHour: (Int) -> Unit,
+    onAdjustMinute: (Int) -> Unit
+) {
+    if (!enabled) return
+    SettingsCardSurface(
+        shape = RoundedCornerShape(24.dp),
+        padding = PaddingValues(16.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                stringResource(id = R.string.settings_alarm_time),
+                color = LiquidGlassText.copy(alpha = 0.68f),
+                fontSize = 13.sp
+            )
+            Text(
+                text = "%02d:%02d".format(hour, minute),
+                color = LiquidGlassText,
+                fontSize = 18.sp,
+                fontFamily = UiFontFamily
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                TinyActionChip(text = "-H", onClick = { onAdjustHour(-1) })
+                TinyActionChip(text = "+H", onClick = { onAdjustHour(1) })
+                TinyActionChip(text = "-M", onClick = { onAdjustMinute(-5) })
+                TinyActionChip(text = "+M", onClick = { onAdjustMinute(5) })
+            }
+        }
+    }
+}
+
+@Composable
 private fun ParticleWeather.label(): String {
     return when (this) {
         ParticleWeather.SUNNY -> stringResource(id = R.string.weather_sunny)
@@ -1222,16 +1382,30 @@ private fun ClockContent(
     fontFamily: FontFamily,
     onPlayAudio: () -> Unit,
     onToggleSettings: () -> Unit,
+    onSetClockMode: (ClockMode) -> Unit,
+    onToggleModeRunning: () -> Unit,
+    onResetMode: () -> Unit,
+    onAdjustPomodoroFocus: (Int) -> Unit,
+    onAdjustPomodoroBreak: (Int) -> Unit,
+    onAdjustCountdown: (Int) -> Unit,
     mainDisplayModifier: Modifier = Modifier,
     onTimeBoundsChanged: (RectF) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
     val screenWidth = configuration.screenWidthDp
+    val screenHeight = configuration.screenHeightDp
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val isCompactPortrait = !isLandscape && screenWidth < 430
     val baseFontSize = ((screenWidth / 8).coerceAtLeast(32) * 1.48f) * state.selectedFont.sizeMultiplier
     val footerFontSize = (screenWidth / 20).coerceIn(16, 24).sp
+    val quietLayout = state.activeThemePreset.profile().quietLayout || state.currentHour24 >= 23 || state.currentHour24 < 7
 
-    val alpha by animateFloatAsState(targetValue = if (state.isBurnInProtectionEnabled) 0.65f else 0.9f, animationSpec = tween(1000), label = "burnInAlpha")
+    val alpha by animateFloatAsState(
+        targetValue = (if (state.isBurnInProtectionEnabled) 0.65f else 0.9f) * state.activeThemePreset.profile().dimStrength,
+        animationSpec = tween(1000),
+        label = "burnInAlpha"
+    )
 
     Box(
         modifier = Modifier
@@ -1240,120 +1414,925 @@ private fun ClockContent(
             .alpha(alpha)
             .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.TopCenter),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            LiquidGlassSurface(
-                shape = RoundedCornerShape(26.dp),
-                padding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                modifier = Modifier.wrapContentWidth()
-            ) {
-                Text(
-                    text = state.location,
-                    color = LiquidGlassText.copy(alpha = 0.9f),
-                    fontSize = 13.sp,
-                    fontFamily = UiFontFamily,
-                    letterSpacing = 0.8.sp
-                )
-            }
-            LiquidGlassSurface(
-                shape = RoundedCornerShape(28.dp),
-                padding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    BatteryStatus(state.batteryLevel)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    IconButton(
-                        onClick = onToggleSettings,
-                        modifier = Modifier.size(44.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = stringResource(id = R.string.cd_settings),
-                            modifier = Modifier.size(22.dp),
-                            tint = LiquidGlassText.copy(alpha = 0.76f)
-                        )
-                    }
-                }
-            }
-        }
-        MainTimeDisplay(
-            state = state,
-            fontFamily = fontFamily,
-            baseSize = baseFontSize,
-            modifier = Modifier
-                .align(Alignment.Center)
+        if (isLandscape) {
+            val displayModifier = Modifier
                 .then(mainDisplayModifier)
                 .onGloballyPositioned { coordinates ->
                     val rect = coordinates.boundsInRoot()
-                    onTimeBoundsChanged(
-                        RectF(rect.left, rect.top, rect.right, rect.bottom)
-                    )
+                    onTimeBoundsChanged(RectF(rect.left, rect.top, rect.right, rect.bottom))
                 }
-        )
-        Text(
-            text = "${state.date} · ${state.dayOfWeek}",
-            color = LiquidGlassText.copy(alpha = 0.9f),
-            fontSize = footerFontSize,
-            fontFamily = UiFontFamily,
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .clip(RoundedCornerShape(24.dp))
-                .background(
-                    Brush.linearGradient(
-                        listOf(
-                            Color.White.copy(alpha = 0.16f),
-                            LiquidGlassTint.copy(alpha = 0.10f)
-                        )
-                    )
+
+            LandscapeClockContent(
+                state = state,
+                fontFamily = fontFamily,
+                baseFontSize = baseFontSize,
+                displayModifier = displayModifier,
+                onToggleSettings = onToggleSettings,
+                onSetClockMode = onSetClockMode,
+                onToggleModeRunning = onToggleModeRunning,
+                onResetMode = onResetMode,
+                onAdjustPomodoroFocus = onAdjustPomodoroFocus,
+                onAdjustPomodoroBreak = onAdjustPomodoroBreak,
+                onAdjustCountdown = onAdjustCountdown,
+                onPlayAudio = onPlayAudio
+            )
+            return@Box
+        }
+
+        val displayModifier = Modifier
+            .then(mainDisplayModifier)
+            .onGloballyPositioned { coordinates ->
+                val rect = coordinates.boundsInRoot()
+                onTimeBoundsChanged(
+                    RectF(rect.left, rect.top, rect.right, rect.bottom)
                 )
-                .padding(horizontal = 16.dp, vertical = 10.dp)
+            }
+
+        PortraitClockContent(
+            state = state,
+            fontFamily = fontFamily,
+            baseFontSize = baseFontSize,
+            footerFontSize = footerFontSize,
+            quietLayout = quietLayout,
+            isCompactPortrait = isCompactPortrait,
+            screenHeight = screenHeight,
+            displayModifier = displayModifier,
+            onPlayAudio = onPlayAudio,
+            onToggleSettings = onToggleSettings,
+            onSetClockMode = onSetClockMode,
+            onToggleModeRunning = onToggleModeRunning,
+            onResetMode = onResetMode,
+            onAdjustPomodoroFocus = onAdjustPomodoroFocus,
+            onAdjustPomodoroBreak = onAdjustPomodoroBreak,
+            onAdjustCountdown = onAdjustCountdown
         )
-        if (state.isSoundButtonVisible) AudioButton(onPlayAudio, modifier = Modifier.align(Alignment.BottomEnd))
     }
 }
 
 @Composable
-private fun MainTimeDisplay(state: ClockState, fontFamily: FontFamily, baseSize: Float, modifier: Modifier) {
+private fun ModeSwitcherRow(
+    state: ClockState,
+    onSetClockMode: (ClockMode) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        items(ClockMode.entries.toList()) { mode ->
+            SettingsChip(
+                selected = state.clockMode == mode,
+                onClick = { onSetClockMode(mode) }
+            ) {
+                Text(
+                    text = mode.label(),
+                    color = LiquidGlassText,
+                    fontSize = 13.sp,
+                    fontFamily = UiFontFamily
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PortraitClockContent(
+    state: ClockState,
+    fontFamily: FontFamily,
+    baseFontSize: Float,
+    footerFontSize: TextUnit,
+    quietLayout: Boolean,
+    isCompactPortrait: Boolean,
+    screenHeight: Int,
+    displayModifier: Modifier,
+    onPlayAudio: () -> Unit,
+    onToggleSettings: () -> Unit,
+    onSetClockMode: (ClockMode) -> Unit,
+    onToggleModeRunning: () -> Unit,
+    onResetMode: () -> Unit,
+    onAdjustPomodoroFocus: (Int) -> Unit,
+    onAdjustPomodoroBreak: (Int) -> Unit,
+    onAdjustCountdown: (Int) -> Unit
+) {
+    var controlsCollapsed by remember(state.clockMode) { mutableStateOf(false) }
+    val portraitMainSize = baseFontSize * if (isCompactPortrait) 0.98f else 1.06f
+    LaunchedEffect(state.clockMode, state.timerRunning) {
+        controlsCollapsed = state.clockMode != ClockMode.CLOCK && state.timerRunning
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
+        ) {
+            DateDayBlock(
+                state = state,
+                footerFontSize = footerFontSize,
+                modifier = Modifier.weight(1f)
+            )
+            LiquidGlassSurface(
+                shape = RoundedCornerShape(28.dp),
+                padding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                IconButton(
+                    onClick = onToggleSettings,
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = stringResource(id = R.string.cd_settings),
+                        modifier = Modifier.size(22.dp),
+                        tint = LiquidGlassText.copy(alpha = 0.76f)
+                    )
+                }
+            }
+        }
+
+        ModeSwitcherRow(
+            state = state,
+            onSetClockMode = onSetClockMode,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = if (quietLayout) 10.dp else 14.dp)
+        )
+
+        Spacer(modifier = Modifier.height(if (isCompactPortrait) 16.dp else 20.dp))
+
+        MainTimeDisplay(
+            state = state,
+            fontFamily = fontFamily,
+            baseSize = portraitMainSize,
+            modifier = displayModifier,
+            showSeconds = false
+        )
+
+        Spacer(modifier = Modifier.height(if (isCompactPortrait) 10.dp else 14.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = if (isCompactPortrait) 10.dp else 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            PortraitSecondsCard(
+                state = state,
+                minuteReferenceSize = portraitMainSize,
+                modifier = Modifier.weight(0.34f)
+            )
+            ThemePresetPill(
+                label = stringResource(id = R.string.current_preset_label, state.activeThemePreset.label()),
+                modifier = Modifier.weight(0.66f)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        PomodoroInfoCard(
+            state = state,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = if (isCompactPortrait) 10.dp else 16.dp)
+        )
+
+        if (state.clockMode != ClockMode.CLOCK) {
+            Spacer(modifier = Modifier.height(10.dp))
+            if (controlsCollapsed) {
+                RunningControlOrb(
+                    state = state,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                    onExpand = { controlsCollapsed = false }
+                )
+            } else {
+                ModeControlPanel(
+                    state = state,
+                    onToggleModeRunning = onToggleModeRunning,
+                    onResetMode = onResetMode,
+                    onAdjustPomodoroFocus = onAdjustPomodoroFocus,
+                    onAdjustPomodoroBreak = onAdjustPomodoroBreak,
+                    onAdjustCountdown = onAdjustCountdown,
+                    compact = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = if (isCompactPortrait) 10.dp else 16.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        CompanionStatusCard(
+            state = state,
+            quietLayout = quietLayout,
+            compact = true,
+            modifier = Modifier
+                .fillMaxWidth(0.72f)
+        )
+
+        Spacer(modifier = Modifier.weight(if (screenHeight < 760) 0.22f else 0.38f))
+
+        if (state.isSoundButtonVisible) {
+            AudioButton(onPlayAudio, modifier = Modifier.padding(bottom = 18.dp))
+            Spacer(modifier = Modifier.height(4.dp))
+        }
+    }
+}
+
+@Composable
+private fun DateDayBlock(state: ClockState, footerFontSize: TextUnit, modifier: Modifier = Modifier) {
+    SettingsCardSurface(
+        shape = RoundedCornerShape(26.dp),
+        padding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
+        modifier = modifier
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = state.dayOfWeek,
+                color = LiquidGlassText.copy(alpha = 0.92f),
+                fontSize = (footerFontSize.value + 6).sp,
+                fontFamily = UiFontFamily,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = state.date,
+                color = LiquidGlassText.copy(alpha = 0.68f),
+                fontSize = footerFontSize,
+                fontFamily = UiFontFamily
+            )
+        }
+    }
+}
+
+@Composable
+private fun PomodoroInfoCard(state: ClockState, modifier: Modifier = Modifier) {
+    val nextPomodoroLabel = stringResource(id = R.string.next_pomodoro_in, state.pomodoroFocusMinutes)
+    val currentRemaining = when (state.clockMode) {
+        ClockMode.POMODORO -> formatCountdownLabel(state.pomodoroRemainingSeconds)
+        ClockMode.COUNTDOWN -> formatCountdownLabel(state.countdownRemainingSeconds)
+        else -> formatCountdownLabel(state.pomodoroFocusMinutes * 60)
+    }
+    val progress = when (state.clockMode) {
+        ClockMode.POMODORO -> {
+            val total = if (state.pomodoroPhase == PomodoroPhase.FOCUS) {
+                state.pomodoroFocusMinutes * 60
+            } else {
+                state.pomodoroBreakMinutes * 60
+            }
+            1f - (state.pomodoroRemainingSeconds / total.coerceAtLeast(1).toFloat())
+        }
+        ClockMode.COUNTDOWN -> 1f - (state.countdownRemainingSeconds / (state.countdownDurationMinutes * 60).coerceAtLeast(1).toFloat())
+        ClockMode.STOPWATCH -> (state.stopwatchElapsedSeconds % 3600) / 3600f
+        ClockMode.CLOCK -> 0.38f
+    }.coerceIn(0f, 1f)
+
+    SettingsCardSurface(
+        shape = RoundedCornerShape(28.dp),
+        padding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+        modifier = modifier
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            ThemePresetPill(label = nextPomodoroLabel)
+            Text(
+                text = stringResource(id = R.string.current_remaining, currentRemaining),
+                color = LiquidGlassText.copy(alpha = 0.9f),
+                fontSize = 16.sp,
+                fontFamily = UiFontFamily
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(10.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(Color.White.copy(alpha = 0.10f))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(progress)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(
+                                    Color(0xFFD6EAFF).copy(alpha = 0.88f),
+                                    Color(0xFF8CB9E8).copy(alpha = 0.72f)
+                                )
+                            )
+                        )
+                )
+            }
+            Text(
+                text = state.modeHeadline(),
+                color = LiquidGlassText.copy(alpha = 0.62f),
+                fontSize = 13.sp,
+                fontFamily = UiFontFamily
+            )
+        }
+    }
+}
+
+@Composable
+private fun PortraitSecondsCard(
+    state: ClockState,
+    minuteReferenceSize: Float,
+    modifier: Modifier = Modifier
+) {
+    val display = remember(state) { state.timerDisplay() }
+    SettingsCardSurface(
+        shape = RoundedCornerShape(22.dp),
+        padding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+        modifier = modifier
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = stringResource(id = R.string.seconds_label),
+                color = LiquidGlassText.copy(alpha = 0.64f),
+                fontSize = 11.sp,
+                fontFamily = UiFontFamily
+            )
+            FlipDigit(
+                value = display.second,
+                font = state.selectedFont,
+                fontSize = (minuteReferenceSize * 0.8f) * state.selectedFont.secondsScale,
+                compact = true
+            )
+        }
+    }
+}
+
+@Composable
+private fun LandscapeClockContent(
+    state: ClockState,
+    fontFamily: FontFamily,
+    baseFontSize: Float,
+    displayModifier: Modifier,
+    onToggleSettings: () -> Unit,
+    onSetClockMode: (ClockMode) -> Unit,
+    onToggleModeRunning: () -> Unit,
+    onResetMode: () -> Unit,
+    onAdjustPomodoroFocus: (Int) -> Unit,
+    onAdjustPomodoroBreak: (Int) -> Unit,
+    onAdjustCountdown: (Int) -> Unit,
+    onPlayAudio: () -> Unit
+) {
+    var transientModeLabel by remember { mutableStateOf<String?>(null) }
+    var controlsCollapsed by remember(state.clockMode) { mutableStateOf(false) }
+    LaunchedEffect(transientModeLabel) {
+        if (transientModeLabel != null) {
+            kotlinx.coroutines.delay(3000)
+            transientModeLabel = null
+        }
+    }
+    LaunchedEffect(state.clockMode, state.timerRunning) {
+        controlsCollapsed = state.clockMode != ClockMode.CLOCK && state.timerRunning
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(state.clockMode) {
+                var totalDrag = 0f
+                detectHorizontalDragGestures(
+                    onHorizontalDrag = { _, dragAmount ->
+                        totalDrag += dragAmount
+                    },
+                    onDragCancel = { totalDrag = 0f },
+                    onDragEnd = {
+                        val modes = ClockMode.entries
+                        val currentIndex = modes.indexOf(state.clockMode)
+                        val nextMode = when {
+                            totalDrag <= -72f && currentIndex < modes.lastIndex -> modes[currentIndex + 1]
+                            totalDrag >= 72f && currentIndex > 0 -> modes[currentIndex - 1]
+                            else -> null
+                        }
+                        if (nextMode != null) {
+                            onSetClockMode(nextMode)
+                            transientModeLabel = nextMode.name.lowercase().replaceFirstChar { it.titlecase() }
+                        }
+                        totalDrag = 0f
+                    }
+                )
+            }
+    ) {
+        LiquidGlassSurface(
+            shape = RoundedCornerShape(28.dp),
+            padding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 2.dp, end = 2.dp)
+        ) {
+            IconButton(
+                onClick = onToggleSettings,
+                modifier = Modifier.size(44.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = stringResource(id = R.string.cd_settings),
+                    modifier = Modifier.size(22.dp),
+                    tint = LiquidGlassText.copy(alpha = 0.76f)
+                )
+            }
+        }
+
+        MainTimeDisplay(
+            state = state,
+            fontFamily = fontFamily,
+            baseSize = baseFontSize * 1.30f,
+            modifier = displayModifier
+                .align(Alignment.Center)
+                .padding(start = 34.dp, end = 34.dp, bottom = 22.dp)
+        )
+
+        LandscapeModeFooter(
+            modes = ClockMode.entries.toList(),
+            currentMode = state.clockMode,
+            label = transientModeLabel ?: stringResource(id = R.string.current_preset_compact, state.activeThemePreset.label()),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 18.dp)
+        )
+
+        if (state.clockMode != ClockMode.CLOCK) {
+            if (controlsCollapsed) {
+                RunningControlOrb(
+                    state = state,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 18.dp, bottom = 18.dp),
+                    onExpand = { controlsCollapsed = false }
+                )
+            } else {
+                ModeControlPanel(
+                    state = state,
+                    onToggleModeRunning = onToggleModeRunning,
+                    onResetMode = onResetMode,
+                    onAdjustPomodoroFocus = onAdjustPomodoroFocus,
+                    onAdjustPomodoroBreak = onAdjustPomodoroBreak,
+                    onAdjustCountdown = onAdjustCountdown,
+                    compact = true,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 18.dp, bottom = 18.dp)
+                        .widthIn(max = 276.dp)
+                )
+            }
+        }
+
+        if (state.isSoundButtonVisible) {
+            AudioButton(
+                onPlayAudio,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 10.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun LandscapeModeFooter(
+    modes: List<ClockMode>,
+    currentMode: ClockMode,
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    SettingsCardSurface(
+        shape = RoundedCornerShape(22.dp),
+        padding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+        modifier = modifier
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = label,
+                color = LiquidGlassText.copy(alpha = 0.84f),
+                fontFamily = UiFontFamily,
+                fontSize = 11.sp
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                modes.forEach { mode ->
+                    val active = mode == currentMode
+                    Box(
+                        modifier = Modifier
+                            .size(if (active) 9.dp else 7.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (active) Color.White.copy(alpha = 0.88f)
+                                else Color.White.copy(alpha = 0.26f)
+                            )
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModeSidebarRail(
+    state: ClockState,
+    onSetClockMode: (ClockMode) -> Unit,
+    onToggleModeRunning: () -> Unit,
+    onResetMode: () -> Unit,
+    onAdjustPomodoroFocus: (Int) -> Unit,
+    onAdjustPomodoroBreak: (Int) -> Unit,
+    onAdjustCountdown: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.width(124.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalAlignment = Alignment.Start
+    ) {
+        ClockMode.entries.forEach { mode ->
+            SettingsChip(
+                selected = state.clockMode == mode,
+                onClick = { onSetClockMode(mode) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = mode.label(),
+                    color = LiquidGlassText.copy(alpha = 0.92f),
+                    fontSize = 12.sp,
+                    fontFamily = UiFontFamily
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemePresetPill(label: String, modifier: Modifier = Modifier) {
+    SettingsCardSurface(
+        shape = RoundedCornerShape(18.dp),
+        padding = PaddingValues(horizontal = 14.dp, vertical = 7.dp),
+        modifier = modifier
+    ) {
+        Text(
+            text = label,
+            color = LiquidGlassText.copy(alpha = 0.82f),
+            fontFamily = UiFontFamily,
+            fontSize = 11.sp
+        )
+    }
+}
+
+@Composable
+private fun RunningControlOrb(
+    state: ClockState,
+    modifier: Modifier = Modifier,
+    onExpand: () -> Unit
+) {
+    val pulse = rememberInfiniteTransition(label = "controlPulse").animateFloat(
+        initialValue = 0.94f,
+        targetValue = 1.03f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1400, easing = EaseInOut),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "controlPulseValue"
+    )
+    val halo = rememberInfiniteTransition(label = "controlHalo").animateFloat(
+        initialValue = 0.72f,
+        targetValue = 1.08f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1700, easing = EaseInOut),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "controlHaloValue"
+    )
+    val label = when (state.clockMode) {
+        ClockMode.POMODORO -> if (state.pomodoroPhase == PomodoroPhase.FOCUS) "Focus" else "Break"
+        ClockMode.COUNTDOWN -> "Timer"
+        ClockMode.STOPWATCH -> "Run"
+        ClockMode.CLOCK -> ""
+    }
+    val progress = state.modeProgressFraction()
+
+    Box(
+        modifier = modifier
+            .size(84.dp)
+            .graphicsLayer(
+                scaleX = pulse.value,
+                scaleY = pulse.value
+            )
+            .clickable(onClick = onExpand),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.matchParentSize()) {
+            val stroke = 5.dp.toPx()
+            val center = Offset(size.width / 2f, size.height / 2f)
+            val baseRadius = size.minDimension / 2f - stroke
+            val outerRadius = baseRadius * halo.value
+            val innerRingRadius = baseRadius * 0.74f
+
+            drawCircle(
+                color = Color.White.copy(alpha = 0.06f),
+                radius = outerRadius,
+                center = center,
+                style = Stroke(width = 1.5.dp.toPx())
+            )
+            drawCircle(
+                color = Color(0xFFA8D6FF).copy(alpha = 0.14f),
+                radius = outerRadius * 0.88f,
+                center = center,
+                style = Stroke(width = 2.2.dp.toPx())
+            )
+            drawCircle(
+                brush = Brush.radialGradient(
+                    listOf(
+                        Color.White.copy(alpha = 0.18f),
+                        Color(0xFF1C2A39).copy(alpha = 0.86f)
+                    ),
+                    center = center,
+                    radius = baseRadius
+                ),
+                radius = baseRadius,
+                center = center
+            )
+            drawCircle(
+                color = Color.White.copy(alpha = 0.14f),
+                radius = baseRadius,
+                center = center,
+                style = Stroke(width = stroke)
+            )
+            drawCircle(
+                color = Color.White.copy(alpha = 0.10f),
+                radius = innerRingRadius,
+                center = center,
+                style = Stroke(width = 2.dp.toPx())
+            )
+            drawArc(
+                brush = Brush.sweepGradient(
+                    listOf(
+                        Color(0xFFDDF0FF),
+                        Color(0xFFA5D1FF),
+                        Color(0xFFDDF0FF)
+                    )
+                ),
+                startAngle = -90f,
+                sweepAngle = 360f * progress.coerceIn(0.06f, 1f),
+                useCenter = false,
+                topLeft = Offset(center.x - baseRadius, center.y - baseRadius),
+                size = Size(baseRadius * 2f, baseRadius * 2f),
+                style = Stroke(width = stroke, cap = StrokeCap.Round)
+            )
+            drawCircle(
+                brush = Brush.radialGradient(
+                    listOf(
+                        Color(0xFFEAF7FF).copy(alpha = 0.95f),
+                        Color(0xFFA7D8FF).copy(alpha = 0.55f),
+                        Color.Transparent
+                    ),
+                    center = center,
+                    radius = baseRadius * 0.28f
+                ),
+                radius = baseRadius * 0.28f,
+                center = center
+            )
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = label,
+                color = LiquidGlassText.copy(alpha = 0.82f),
+                fontFamily = UiFontFamily,
+                fontSize = 11.sp
+            )
+            Text(
+                text = when (state.clockMode) {
+                    ClockMode.POMODORO -> formatCountdownLabel(state.pomodoroRemainingSeconds)
+                    ClockMode.COUNTDOWN -> formatCountdownLabel(state.countdownRemainingSeconds)
+                    ClockMode.STOPWATCH -> formatCountdownLabel(state.stopwatchElapsedSeconds)
+                    ClockMode.CLOCK -> ""
+                },
+                color = LiquidGlassText,
+                fontFamily = UiFontFamily,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+@Composable
+private fun ModeControlPanel(
+    state: ClockState,
+    onToggleModeRunning: () -> Unit,
+    onResetMode: () -> Unit,
+    onAdjustPomodoroFocus: (Int) -> Unit,
+    onAdjustPomodoroBreak: (Int) -> Unit,
+    onAdjustCountdown: (Int) -> Unit,
+    compact: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    SettingsCardSurface(
+        shape = RoundedCornerShape(24.dp),
+        padding = PaddingValues(
+            horizontal = if (compact) 14.dp else 16.dp,
+            vertical = if (compact) 12.dp else 14.dp
+        ),
+        modifier = modifier
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 10.dp)
+        ) {
+            Text(
+                text = state.modeHeadline(),
+                color = LiquidGlassText.copy(alpha = 0.92f),
+                fontFamily = UiFontFamily,
+                fontSize = if (compact) 14.sp else 15.sp
+            )
+            if (state.clockMode != ClockMode.CLOCK) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SettingsChip(selected = state.timerRunning, onClick = onToggleModeRunning) {
+                        Text(
+                            text = stringResource(id = if (state.timerRunning) R.string.mode_pause else R.string.mode_start),
+                            color = LiquidGlassText,
+                            fontFamily = UiFontFamily,
+                            fontSize = if (compact) 12.sp else 13.sp
+                        )
+                    }
+                    SettingsChip(selected = false, onClick = onResetMode) {
+                        Text(
+                            text = stringResource(id = R.string.mode_reset),
+                            color = LiquidGlassText,
+                            fontFamily = UiFontFamily,
+                            fontSize = if (compact) 12.sp else 13.sp
+                        )
+                    }
+                }
+            }
+            when (state.clockMode) {
+                ClockMode.POMODORO -> {
+                    ModeAdjustRow(
+                        label = stringResource(id = R.string.mode_focus_minutes, state.pomodoroFocusMinutes),
+                        onMinus = { onAdjustPomodoroFocus(-5) },
+                        onPlus = { onAdjustPomodoroFocus(5) },
+                        compact = compact
+                    )
+                    ModeAdjustRow(
+                        label = stringResource(id = R.string.mode_break_minutes, state.pomodoroBreakMinutes),
+                        onMinus = { onAdjustPomodoroBreak(-1) },
+                        onPlus = { onAdjustPomodoroBreak(1) },
+                        compact = compact
+                    )
+                }
+                ClockMode.COUNTDOWN -> {
+                    ModeAdjustRow(
+                        label = stringResource(id = R.string.mode_countdown_minutes, state.countdownDurationMinutes),
+                        onMinus = { onAdjustCountdown(-1) },
+                        onPlus = { onAdjustCountdown(1) },
+                        compact = compact
+                    )
+                }
+                ClockMode.STOPWATCH -> {
+                    Text(
+                        text = stringResource(id = R.string.mode_stopwatch_stats, formatDurationWords(state.stopwatchElapsedSeconds)),
+                        color = LiquidGlassText.copy(alpha = 0.72f),
+                        fontFamily = UiFontFamily,
+                        fontSize = if (compact) 11.sp else 12.sp
+                    )
+                }
+                ClockMode.CLOCK -> {
+                    Text(
+                        text = stringResource(id = R.string.mode_clock_hint),
+                        color = LiquidGlassText.copy(alpha = 0.72f),
+                        fontFamily = UiFontFamily,
+                        fontSize = if (compact) 11.sp else 12.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModeAdjustRow(label: String, onMinus: () -> Unit, onPlus: () -> Unit, compact: Boolean = false) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TinyActionChip(text = "-", onClick = onMinus, compact = compact)
+        Text(
+            text = label,
+            color = LiquidGlassText.copy(alpha = 0.82f),
+            fontFamily = UiFontFamily,
+            fontSize = if (compact) 11.sp else 12.sp
+        )
+        TinyActionChip(text = "+", onClick = onPlus, compact = compact)
+    }
+}
+
+@Composable
+private fun TinyActionChip(text: String, onClick: () -> Unit, compact: Boolean = false) {
+    SettingsChip(selected = false, onClick = onClick) {
+        Text(
+            text = text,
+            color = LiquidGlassText,
+            fontFamily = UiFontFamily,
+            fontSize = if (compact) 12.sp else 14.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+@Composable
+private fun CompanionStatusCard(
+    state: ClockState,
+    quietLayout: Boolean,
+    compact: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    SettingsCardSurface(
+        shape = RoundedCornerShape(22.dp),
+        padding = PaddingValues(
+            horizontal = if (compact) 14.dp else 16.dp,
+            vertical = if (compact) 10.dp else 12.dp
+        ),
+        modifier = modifier
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp)) {
+            Text(
+                text = state.companionMessage.ifBlank { state.defaultCompanionMessage() },
+                color = LiquidGlassText.copy(alpha = 0.9f),
+                fontFamily = UiFontFamily,
+                fontSize = if (compact) 12.sp else 13.sp
+            )
+            if (!quietLayout) {
+                Text(
+                    text = stringResource(
+                        id = R.string.focus_stats,
+                        formatDurationWords(state.focusedSecondsToday),
+                        state.completedPomodoros,
+                        state.completedBreaks
+                    ),
+                    color = LiquidGlassText.copy(alpha = 0.62f),
+                    fontFamily = UiFontFamily,
+                    fontSize = if (compact) 10.sp else 11.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MainTimeDisplay(
+    state: ClockState,
+    fontFamily: FontFamily,
+    baseSize: Float,
+    modifier: Modifier,
+    showSeconds: Boolean = true
+) {
+    val display = remember(state) { state.timerDisplay() }
     BoxWithConstraints(modifier = modifier) {
         val availableWidth = maxWidth.value
-        val widthFactor = (if (state.amPm.isNotBlank()) 5.35f else 4.95f) * state.selectedFont.widthFitMultiplier
+        val widthFactor = (if (display.amPm.isNotBlank()) 5.35f else if (showSeconds) 4.95f else 4.18f) * state.selectedFont.widthFitMultiplier
         val fittedBaseSize = ((availableWidth - 12f) / widthFactor).coerceAtLeast(34f)
         val resolvedBaseSize = minOf(baseSize, fittedBaseSize)
         val secondsScale = state.selectedFont.secondsScale
 
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            FlipDigit(state.hour, state.selectedFont, resolvedBaseSize)
+            FlipDigit(display.hour, state.selectedFont, resolvedBaseSize)
             Text(":", color = LiquidGlassText.copy(alpha = 0.84f), fontSize = (resolvedBaseSize * 0.78f).sp, fontWeight = FontWeight.Light)
-            FlipDigit(state.minute, state.selectedFont, resolvedBaseSize)
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(if (state.amPm.isNotBlank()) 18.dp else 10.dp)
-            ) {
-                if (state.amPm.isNotBlank()) {
-                    LiquidGlassSurface(
-                        shape = RoundedCornerShape(20.dp),
-                        padding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        highlightAlpha = 0.16f
-                    ) {
-                        Text(
-                            state.amPm,
-                            color = LiquidGlassText.copy(alpha = 0.7f),
-                            fontSize = (resolvedBaseSize * 0.28f).sp,
-                            fontFamily = UiFontFamily
+            FlipDigit(display.minute, state.selectedFont, resolvedBaseSize)
+            if (showSeconds || display.amPm.isNotBlank()) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(if (display.amPm.isNotBlank()) 18.dp else 10.dp)
+                ) {
+                    if (display.amPm.isNotBlank()) {
+                        LiquidGlassSurface(
+                            shape = RoundedCornerShape(20.dp),
+                            padding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            highlightAlpha = 0.16f
+                        ) {
+                            Text(
+                                display.amPm,
+                                color = LiquidGlassText.copy(alpha = 0.7f),
+                                fontSize = (resolvedBaseSize * 0.28f).sp,
+                                fontFamily = UiFontFamily
+                            )
+                        }
+                    }
+                    if (showSeconds) {
+                        FlipDigit(
+                            display.second,
+                            state.selectedFont,
+                            (if (display.amPm.isNotBlank()) resolvedBaseSize * 0.23f else resolvedBaseSize * 0.28f) * secondsScale,
+                            compact = true
                         )
                     }
                 }
-                FlipDigit(
-                    state.second,
-                    state.selectedFont,
-                    (if (state.amPm.isNotBlank()) resolvedBaseSize * 0.23f else resolvedBaseSize * 0.28f) * secondsScale,
-                    compact = true
-                )
             }
         }
     }
@@ -1692,6 +2671,125 @@ private fun BatteryStatus(levelStr: String) {
     }
 }
 
+private data class TimerDisplay(val hour: String, val minute: String, val second: String, val amPm: String = "")
+
+@Composable
+private fun ClockMode.label(): String {
+    return when (this) {
+        ClockMode.CLOCK -> stringResource(id = R.string.mode_clock)
+        ClockMode.POMODORO -> stringResource(id = R.string.mode_pomodoro)
+        ClockMode.COUNTDOWN -> stringResource(id = R.string.mode_countdown)
+        ClockMode.STOPWATCH -> stringResource(id = R.string.mode_stopwatch)
+    }
+}
+
+@Composable
+private fun ThemePreset.label(): String {
+    return when (this) {
+        ThemePreset.AUTO -> stringResource(id = R.string.theme_auto)
+        ThemePreset.FOCUS -> stringResource(id = R.string.theme_focus)
+        ThemePreset.PLAYFUL -> stringResource(id = R.string.theme_playful)
+        ThemePreset.SERENE -> stringResource(id = R.string.theme_serene)
+        ThemePreset.NIGHT -> stringResource(id = R.string.theme_night)
+    }
+}
+
+private fun ClockState.timerDisplay(): TimerDisplay {
+    return when (clockMode) {
+        ClockMode.CLOCK -> TimerDisplay(hour, minute, second, amPm)
+        ClockMode.POMODORO -> secondsToDisplay(pomodoroRemainingSeconds)
+        ClockMode.COUNTDOWN -> secondsToDisplay(countdownRemainingSeconds)
+        ClockMode.STOPWATCH -> secondsToDisplay(stopwatchElapsedSeconds)
+    }
+}
+
+private fun ClockState.modeHeadline(): String {
+    return when (clockMode) {
+        ClockMode.CLOCK -> "${activeThemePreset.name.lowercase().replaceFirstChar { it.titlecase() }} preset"
+        ClockMode.POMODORO -> if (pomodoroPhase == PomodoroPhase.FOCUS) "Focus session" else "Break session"
+        ClockMode.COUNTDOWN -> "Countdown target ${countdownDurationMinutes} min"
+        ClockMode.STOPWATCH -> "Track live focus time"
+    }
+}
+
+private fun ClockState.defaultCompanionMessage(): String {
+    return when (clockMode) {
+        ClockMode.CLOCK -> "Cat is keeping the time calm."
+        ClockMode.POMODORO -> if (pomodoroPhase == PomodoroPhase.FOCUS) "Cat is watching your focus sprint." else "Cat says stretch a little."
+        ClockMode.COUNTDOWN -> "Countdown is running with cat supervision."
+        ClockMode.STOPWATCH -> "Cat is tracking your streak."
+    }
+}
+
+private fun ClockState.modeProgressFraction(): Float {
+    return when (clockMode) {
+        ClockMode.POMODORO -> {
+            val total = if (pomodoroPhase == PomodoroPhase.FOCUS) pomodoroFocusMinutes * 60 else pomodoroBreakMinutes * 60
+            1f - (pomodoroRemainingSeconds / total.coerceAtLeast(1).toFloat())
+        }
+        ClockMode.COUNTDOWN -> 1f - (countdownRemainingSeconds / (countdownDurationMinutes * 60).coerceAtLeast(1).toFloat())
+        ClockMode.STOPWATCH -> ((stopwatchElapsedSeconds % 3600) / 3600f)
+        ClockMode.CLOCK -> 0f
+    }.coerceIn(0f, 1f)
+}
+
+@Composable
+private fun ParticleWeather.portraitSummary(): String {
+    return when (this) {
+        ParticleWeather.SNOW -> stringResource(id = R.string.weather_heavy_snow)
+        ParticleWeather.BLIZZARD -> stringResource(id = R.string.weather_blizzard)
+        ParticleWeather.RAIN -> stringResource(id = R.string.weather_night_rain)
+        ParticleWeather.DRIZZLE -> stringResource(id = R.string.weather_soft_drizzle)
+        ParticleWeather.CLOUDY -> stringResource(id = R.string.weather_multi_cloudy)
+        ParticleWeather.FOG -> stringResource(id = R.string.weather_dense_fog)
+        ParticleWeather.HAIL -> stringResource(id = R.string.weather_hail)
+        ParticleWeather.WIND -> stringResource(id = R.string.weather_wind)
+        ParticleWeather.SUNNY -> stringResource(id = R.string.weather_clear_night)
+    }
+}
+
+private fun ParticleWeather.portraitTemperature(): String {
+    val temp = when (this) {
+        ParticleWeather.SUNNY -> 1
+        ParticleWeather.CLOUDY -> -1
+        ParticleWeather.FOG -> -3
+        ParticleWeather.RAIN -> 2
+        ParticleWeather.SNOW -> -2
+        ParticleWeather.BLIZZARD -> -8
+        ParticleWeather.HAIL -> -4
+        ParticleWeather.WIND -> -5
+        ParticleWeather.DRIZZLE -> 0
+    }
+    return "${temp}°C"
+}
+
+private fun formatCountdownLabel(totalSeconds: Int): String {
+    val minutes = (totalSeconds / 60).coerceAtLeast(0)
+    val seconds = (totalSeconds % 60).coerceAtLeast(0)
+    return "%02d:%02d".format(minutes, seconds)
+}
+
+private fun secondsToDisplay(totalSeconds: Int): TimerDisplay {
+    val hours = (totalSeconds / 3600).coerceAtLeast(0)
+    val minutes = ((totalSeconds % 3600) / 60).coerceAtLeast(0)
+    val seconds = (totalSeconds % 60).coerceAtLeast(0)
+    return TimerDisplay(
+        hour = hours.toString().padStart(2, '0'),
+        minute = minutes.toString().padStart(2, '0'),
+        second = seconds.toString().padStart(2, '0')
+    )
+}
+
+private fun formatDurationWords(totalSeconds: Int): String {
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    return when {
+        hours > 0 -> "${hours}h ${minutes}m"
+        minutes > 0 -> "${minutes}m"
+        else -> "${totalSeconds}s"
+    }
+}
+
 @Composable
 private fun AudioButton(onClick: () -> Unit, modifier: Modifier) {
     LiquidGlassSurface(
@@ -1713,3 +2811,8 @@ private fun AudioButton(onClick: () -> Unit, modifier: Modifier) {
         )
     }
 }
+
+private fun Offset.sanitize(): Offset = Offset(
+    x = x.takeIf { it.isFinite() } ?: 0f,
+    y = y.takeIf { it.isFinite() } ?: 0f
+)

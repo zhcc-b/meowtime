@@ -15,6 +15,7 @@ import android.location.Geocoder
 import android.location.Location
 import android.location.LocationManager
 import android.media.MediaPlayer
+import android.media.audiofx.LoudnessEnhancer
 import android.os.BatteryManager
 import android.os.Build
 import android.os.CancellationSignal
@@ -25,6 +26,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.AndroidViewModel
@@ -62,6 +64,17 @@ private object PreferenceKeys {
     val is24Hour = booleanPreferencesKey("is_24_hour")
     val selectedFont = stringPreferencesKey("selected_font")
     val particleWeatherMode = stringPreferencesKey("particle_weather_mode")
+    val clockMode = stringPreferencesKey("clock_mode")
+    val pomodoroFocusMinutes = intPreferencesKey("pomodoro_focus_minutes")
+    val pomodoroBreakMinutes = intPreferencesKey("pomodoro_break_minutes")
+    val countdownDurationMinutes = intPreferencesKey("countdown_duration_minutes")
+    val hourlyChime = booleanPreferencesKey("hourly_chime")
+    val dailyAlarmEnabled = booleanPreferencesKey("daily_alarm_enabled")
+    val dailyAlarmHour = intPreferencesKey("daily_alarm_hour")
+    val dailyAlarmMinute = intPreferencesKey("daily_alarm_minute")
+    val breakReminder = booleanPreferencesKey("break_reminder")
+    val themePreset = stringPreferencesKey("theme_preset")
+    val whiteNoise = booleanPreferencesKey("white_noise")
 }
 
 class ClockViewModel(application: Application) : AndroidViewModel(application), SensorEventListener {
@@ -70,6 +83,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     val uiState: StateFlow<ClockState> = _uiState.asStateFlow()
 
     private var mediaPlayer: MediaPlayer? = null
+    private var loudnessEnhancer: LoudnessEnhancer? = null
+    private val whiteNoisePlayer = WhiteNoisePlayer()
     private val appContext: Context
         get() = getApplication<Application>().applicationContext
     private val sensorManager = application.applicationContext.getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -87,6 +102,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private var tickerJob: Job? = null
     private var sensorRegistered = false
     private var isAppActive = false
+    private var lastHourlyChimeMarker = ""
+    private var lastDailyAlarmMarker = ""
 
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -117,6 +134,13 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                     val selectedFont = AvailableClockFonts.find { it.name == selectedFontName } ?: state.selectedFont
                     val weatherMode = preferences[PreferenceKeys.particleWeatherMode] ?: "AUTO"
                     val manualWeather = runCatching { ParticleWeather.valueOf(weatherMode) }.getOrNull()
+                    val mode = runCatching { ClockMode.valueOf(preferences[PreferenceKeys.clockMode] ?: ClockMode.CLOCK.name) }
+                        .getOrDefault(ClockMode.CLOCK)
+                    val preset = runCatching { ThemePreset.valueOf(preferences[PreferenceKeys.themePreset] ?: ThemePreset.AUTO.name) }
+                        .getOrDefault(ThemePreset.AUTO)
+                    val persistedPomodoroFocus = preferences[PreferenceKeys.pomodoroFocusMinutes] ?: state.pomodoroFocusMinutes
+                    val persistedPomodoroBreak = preferences[PreferenceKeys.pomodoroBreakMinutes] ?: state.pomodoroBreakMinutes
+                    val persistedCountdown = preferences[PreferenceKeys.countdownDurationMinutes] ?: state.countdownDurationMinutes
                     state.copy(
                         isBurnInProtectionEnabled = preferences[PreferenceKeys.burnIn] ?: state.isBurnInProtectionEnabled,
                         isSoundButtonVisible = preferences[PreferenceKeys.soundButton] ?: state.isSoundButtonVisible,
@@ -127,8 +151,34 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         isCatSystemEnabled = preferences[PreferenceKeys.cats] ?: state.isCatSystemEnabled,
                         isDynamicWallpaperEnabled = preferences[PreferenceKeys.dynamicWallpaper] ?: state.isDynamicWallpaperEnabled,
                         is24HourFormat = preferences[PreferenceKeys.is24Hour] ?: state.is24HourFormat,
-                        selectedFont = selectedFont
+                        selectedFont = selectedFont,
+                        clockMode = mode,
+                        pomodoroFocusMinutes = persistedPomodoroFocus,
+                        pomodoroBreakMinutes = persistedPomodoroBreak,
+                        pomodoroRemainingSeconds = if (!state.timerRunning && state.clockMode == ClockMode.POMODORO && persistedPomodoroFocus != state.pomodoroFocusMinutes) {
+                            persistedPomodoroFocus * 60
+                        } else {
+                            state.pomodoroRemainingSeconds
+                        },
+                        countdownDurationMinutes = persistedCountdown,
+                        countdownRemainingSeconds = if (!state.timerRunning && state.clockMode == ClockMode.COUNTDOWN && persistedCountdown != state.countdownDurationMinutes) {
+                            persistedCountdown * 60
+                        } else {
+                            state.countdownRemainingSeconds
+                        },
+                        hourlyChimeEnabled = preferences[PreferenceKeys.hourlyChime] ?: state.hourlyChimeEnabled,
+                        dailyAlarmEnabled = preferences[PreferenceKeys.dailyAlarmEnabled] ?: state.dailyAlarmEnabled,
+                        dailyAlarmHour = preferences[PreferenceKeys.dailyAlarmHour] ?: state.dailyAlarmHour,
+                        dailyAlarmMinute = preferences[PreferenceKeys.dailyAlarmMinute] ?: state.dailyAlarmMinute,
+                        breakReminderEnabled = preferences[PreferenceKeys.breakReminder] ?: state.breakReminderEnabled,
+                        selectedThemePreset = preset,
+                        whiteNoiseEnabled = preferences[PreferenceKeys.whiteNoise] ?: state.whiteNoiseEnabled
                     )
+                }
+                if (_uiState.value.whiteNoiseEnabled) {
+                    whiteNoisePlayer.start()
+                } else {
+                    whiteNoisePlayer.stop()
                 }
             }
         }
@@ -144,9 +194,11 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                 val now = ZonedDateTime.now()
                 val currentMinute = now.minute
                 val hour24 = now.hour
+                val second = now.second
                 val nowEpochSec = now.toEpochSecond()
                 val weatherAuto = _uiState.value.isParticleWeatherAuto
                 val isNightQuietHours = hour24 >= 23 || hour24 < 7
+                val resolvedPreset = _uiState.value.selectedThemePreset.resolveActive(hour24)
                 if (weatherAuto) {
                     if (activeWeather != _uiState.value.particleWeather) {
                         activeWeather = _uiState.value.particleWeather
@@ -170,39 +222,81 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                     nextWeatherChangeEpochSec = nowEpochSec + (8 * 60 * 60)
                 }
 
+                var shouldPlayReminder = false
                 _uiState.update { state ->
+                    var workingState = state
+                    if (workingState.activeThemePreset != resolvedPreset) {
+                        workingState = applyThemePresetProfile(
+                            state = workingState.copy(activeThemePreset = resolvedPreset),
+                            preset = resolvedPreset
+                        )
+                    }
+
+                    val modeTick = advanceModeState(workingState)
+                    workingState = modeTick.state
+                    if (modeTick.triggerSound) {
+                        shouldPlayReminder = true
+                    }
+
                     val burnInOffset = when {
-                        !state.isBurnInProtectionEnabled -> Offset.Zero
+                        !workingState.isBurnInProtectionEnabled -> Offset.Zero
                         currentMinute != lastMinute -> Offset(
                             x = random.nextFloat() * 20f - 10f,
                             y = random.nextFloat() * 20f - 10f
                         )
-                        else -> state.burnInOffset
+                        else -> workingState.burnInOffset
                     }
-                    val displayHour = if (state.is24HourFormat) {
+                    val displayHour = if (workingState.is24HourFormat) {
                         hour24.toString().padStart(2, '0')
                     } else {
                         val h12 = if (hour24 % 12 == 0) 12 else hour24 % 12
                         h12.toString().padStart(2, '0')
                     }
-                    val amPm = if (state.is24HourFormat) "" else now.format(amPmFormatter)
-                    val onlineWallpaper = if (state.isDynamicWallpaperEnabled) {
+                    val amPm = if (workingState.is24HourFormat) "" else now.format(amPmFormatter)
+                    val onlineWallpaper = if (workingState.isDynamicWallpaperEnabled) {
                         getOnlineBackgroundForTime(now, hour24)
                     } else {
                         null
                     }
-                    state.copy(
+
+                    val hourlyMarker = "${now.toLocalDate()}-$hour24"
+                    val dailyMarker = "${now.toLocalDate()}-${workingState.dailyAlarmHour}-${workingState.dailyAlarmMinute}"
+                    var companionMessage = modeTick.message ?: workingState.companionMessage
+
+                    if (workingState.hourlyChimeEnabled && currentMinute == 0 && second == 0 && hourlyMarker != lastHourlyChimeMarker) {
+                        lastHourlyChimeMarker = hourlyMarker
+                        shouldPlayReminder = true
+                        companionMessage = appContext.getString(R.string.reminder_hourly_chime, displayHour)
+                    }
+                    if (
+                        workingState.dailyAlarmEnabled &&
+                        hour24 == workingState.dailyAlarmHour &&
+                        currentMinute == workingState.dailyAlarmMinute &&
+                        second == 0 &&
+                        dailyMarker != lastDailyAlarmMarker
+                    ) {
+                        lastDailyAlarmMarker = dailyMarker
+                        shouldPlayReminder = true
+                        companionMessage = appContext.getString(R.string.reminder_alarm_now)
+                    }
+
+                    workingState.copy(
                         hour = displayHour,
-                        minute = now.minute.toString().padStart(2, '0'),
-                        second = now.second.toString().padStart(2, '0'),
+                        minute = currentMinute.toString().padStart(2, '0'),
+                        second = second.toString().padStart(2, '0'),
+                        currentHour24 = hour24,
                         amPm = amPm,
                         date = now.format(dateFormatter),
                         dayOfWeek = now.dayOfWeek.getDisplayName(TextStyle.FULL, locale),
-                        backgroundRes = if (state.isDynamicWallpaperEnabled) null else R.drawable.jiguang,
+                        backgroundRes = if (workingState.isDynamicWallpaperEnabled) null else R.drawable.jiguang,
                         backgroundUrl = onlineWallpaper,
-                        particleWeather = if (state.isParticleWeatherAuto) activeWeather else state.particleWeather,
-                        burnInOffset = burnInOffset
+                        particleWeather = if (workingState.isParticleWeatherAuto) activeWeather else workingState.particleWeather,
+                        burnInOffset = burnInOffset,
+                        companionMessage = companionMessage
                     )
+                }
+                if (shouldPlayReminder) {
+                    playReminderCue()
                 }
                 if (currentMinute != lastMinute) {
                     lastMinute = currentMinute
@@ -251,6 +345,97 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         }
         val index = ((now.year + now.dayOfYear + (hour / 6)) % urls.size).coerceAtLeast(0)
         return urls[index]
+    }
+
+    private data class ModeTickResult(
+        val state: ClockState,
+        val message: String? = null,
+        val triggerSound: Boolean = false
+    )
+
+    private fun advanceModeState(state: ClockState): ModeTickResult {
+        if (!state.timerRunning) return ModeTickResult(state)
+        return when (state.clockMode) {
+            ClockMode.CLOCK -> ModeTickResult(state)
+            ClockMode.POMODORO -> {
+                val nextRemaining = state.pomodoroRemainingSeconds - 1
+                val focusedSeconds = state.focusedSecondsToday + if (state.pomodoroPhase == PomodoroPhase.FOCUS) 1 else 0
+                if (nextRemaining <= 0) {
+                    if (state.pomodoroPhase == PomodoroPhase.FOCUS) {
+                        ModeTickResult(
+                            state.copy(
+                                pomodoroPhase = PomodoroPhase.BREAK,
+                                pomodoroRemainingSeconds = state.pomodoroBreakMinutes * 60,
+                                focusedSecondsToday = focusedSeconds,
+                                completedPomodoros = state.completedPomodoros + 1
+                            ),
+                            message = appContext.getString(R.string.companion_focus_done),
+                            triggerSound = true
+                        )
+                    } else {
+                        ModeTickResult(
+                            state.copy(
+                                pomodoroPhase = PomodoroPhase.FOCUS,
+                                pomodoroRemainingSeconds = state.pomodoroFocusMinutes * 60,
+                                completedBreaks = state.completedBreaks + 1
+                            ),
+                            message = appContext.getString(R.string.companion_break_done),
+                            triggerSound = state.breakReminderEnabled
+                        )
+                    }
+                } else {
+                    ModeTickResult(
+                        state.copy(
+                            pomodoroRemainingSeconds = nextRemaining,
+                            focusedSecondsToday = focusedSeconds
+                        )
+                    )
+                }
+            }
+            ClockMode.COUNTDOWN -> {
+                val nextRemaining = state.countdownRemainingSeconds - 1
+                if (nextRemaining <= 0) {
+                    ModeTickResult(
+                        state.copy(
+                            countdownRemainingSeconds = 0,
+                            timerRunning = false
+                        ),
+                        message = appContext.getString(R.string.companion_countdown_done),
+                        triggerSound = true
+                    )
+                } else {
+                    ModeTickResult(state.copy(countdownRemainingSeconds = nextRemaining))
+                }
+            }
+            ClockMode.STOPWATCH -> {
+                val nextElapsed = state.stopwatchElapsedSeconds + 1
+                val needsBreakNudge = state.breakReminderEnabled && nextElapsed > 0 && nextElapsed % (45 * 60) == 0
+                ModeTickResult(
+                    state.copy(stopwatchElapsedSeconds = nextElapsed),
+                    message = if (needsBreakNudge) appContext.getString(R.string.companion_break_nudge) else null,
+                    triggerSound = needsBreakNudge
+                )
+            }
+        }
+    }
+
+    private fun applyThemePresetProfile(state: ClockState, preset: ThemePreset): ClockState {
+        val profile = preset.profile()
+        val presetFont = AvailableClockFonts.find { it.name == profile.fontName } ?: state.selectedFont
+        return state.copy(
+            selectedFont = presetFont,
+            particleWeather = profile.weather,
+            isParticleWeatherAuto = false,
+            isParticleSystemEnabled = profile.particlesEnabled,
+            isCatSystemEnabled = profile.catsEnabled,
+            isDynamicWallpaperEnabled = profile.dynamicWallpaperEnabled,
+            isSoundButtonVisible = profile.soundButtonVisible,
+            activeThemePreset = preset
+        )
+    }
+
+    private fun playReminderCue() {
+        playAudio()
     }
 
     fun fetchLocation(hasLocationPermission: Boolean) {
@@ -368,11 +553,20 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     fun playAudio() {
         if (mediaPlayer == null) {
             mediaPlayer = MediaPlayer.create(appContext, R.raw.audio_file)
+            mediaPlayer?.setVolume(1f, 1f)
+            runCatching {
+                loudnessEnhancer?.release()
+                loudnessEnhancer = LoudnessEnhancer(mediaPlayer!!.audioSessionId).apply {
+                    setTargetGain(1200)
+                    enabled = true
+                }
+            }
         }
         mediaPlayer?.apply {
             if (isPlaying) {
                 seekTo(0)
             }
+            setVolume(1f, 1f)
             start()
         }
     }
@@ -398,6 +592,108 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     fun setFont(font: ClockFont) {
         _uiState.update { it.copy(selectedFont = font) }
         persistSetting { this[PreferenceKeys.selectedFont] = font.name }
+    }
+
+    fun setClockMode(mode: ClockMode) {
+        _uiState.update { state ->
+            when (mode) {
+                ClockMode.CLOCK -> state.copy(clockMode = mode, timerRunning = false, companionMessage = appContext.getString(R.string.mode_clock))
+                ClockMode.POMODORO -> state.copy(
+                    clockMode = mode,
+                    timerRunning = false,
+                    pomodoroPhase = PomodoroPhase.FOCUS,
+                    pomodoroRemainingSeconds = state.pomodoroFocusMinutes * 60,
+                    companionMessage = appContext.getString(R.string.companion_focus_ready)
+                )
+                ClockMode.COUNTDOWN -> state.copy(
+                    clockMode = mode,
+                    timerRunning = false,
+                    countdownRemainingSeconds = state.countdownDurationMinutes * 60,
+                    companionMessage = appContext.getString(R.string.companion_countdown_ready)
+                )
+                ClockMode.STOPWATCH -> state.copy(
+                    clockMode = mode,
+                    timerRunning = false,
+                    stopwatchElapsedSeconds = 0,
+                    companionMessage = appContext.getString(R.string.companion_stopwatch_ready)
+                )
+            }
+        }
+        persistSetting { this[PreferenceKeys.clockMode] = mode.name }
+    }
+
+    fun toggleModeRunning() {
+        _uiState.update { state ->
+            if (state.clockMode == ClockMode.CLOCK) {
+                state
+            } else {
+                state.copy(
+                    timerRunning = !state.timerRunning,
+                    companionMessage = if (!state.timerRunning) {
+                        appContext.getString(R.string.companion_timer_started)
+                    } else {
+                        appContext.getString(R.string.companion_timer_paused)
+                    }
+                )
+            }
+        }
+    }
+
+    fun resetActiveMode() {
+        _uiState.update { state ->
+            when (state.clockMode) {
+                ClockMode.CLOCK -> state
+                ClockMode.POMODORO -> state.copy(
+                    timerRunning = false,
+                    pomodoroPhase = PomodoroPhase.FOCUS,
+                    pomodoroRemainingSeconds = state.pomodoroFocusMinutes * 60,
+                    companionMessage = appContext.getString(R.string.companion_focus_ready)
+                )
+                ClockMode.COUNTDOWN -> state.copy(
+                    timerRunning = false,
+                    countdownRemainingSeconds = state.countdownDurationMinutes * 60,
+                    companionMessage = appContext.getString(R.string.companion_countdown_ready)
+                )
+                ClockMode.STOPWATCH -> state.copy(
+                    timerRunning = false,
+                    stopwatchElapsedSeconds = 0,
+                    companionMessage = appContext.getString(R.string.companion_stopwatch_ready)
+                )
+            }
+        }
+    }
+
+    fun adjustPomodoroFocus(delta: Int) {
+        _uiState.update { state ->
+            val next = (state.pomodoroFocusMinutes + delta).coerceIn(5, 90)
+            state.copy(
+                pomodoroFocusMinutes = next,
+                pomodoroRemainingSeconds = if (!state.timerRunning && state.pomodoroPhase == PomodoroPhase.FOCUS) next * 60 else state.pomodoroRemainingSeconds
+            )
+        }
+        persistSetting { this[PreferenceKeys.pomodoroFocusMinutes] = _uiState.value.pomodoroFocusMinutes }
+    }
+
+    fun adjustPomodoroBreak(delta: Int) {
+        _uiState.update { state ->
+            val next = (state.pomodoroBreakMinutes + delta).coerceIn(1, 30)
+            state.copy(
+                pomodoroBreakMinutes = next,
+                pomodoroRemainingSeconds = if (!state.timerRunning && state.pomodoroPhase == PomodoroPhase.BREAK) next * 60 else state.pomodoroRemainingSeconds
+            )
+        }
+        persistSetting { this[PreferenceKeys.pomodoroBreakMinutes] = _uiState.value.pomodoroBreakMinutes }
+    }
+
+    fun adjustCountdownDuration(delta: Int) {
+        _uiState.update { state ->
+            val next = (state.countdownDurationMinutes + delta).coerceIn(1, 180)
+            state.copy(
+                countdownDurationMinutes = next,
+                countdownRemainingSeconds = if (!state.timerRunning) next * 60 else state.countdownRemainingSeconds
+            )
+        }
+        persistSetting { this[PreferenceKeys.countdownDurationMinutes] = _uiState.value.countdownDurationMinutes }
     }
 
     fun toggleParallax(enabled: Boolean) {
@@ -453,6 +749,51 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         persistSetting { this[PreferenceKeys.is24Hour] = enabled }
     }
 
+    fun toggleHourlyChime(enabled: Boolean) {
+        _uiState.update { it.copy(hourlyChimeEnabled = enabled) }
+        persistSetting { this[PreferenceKeys.hourlyChime] = enabled }
+    }
+
+    fun toggleDailyAlarm(enabled: Boolean) {
+        _uiState.update { it.copy(dailyAlarmEnabled = enabled) }
+        persistSetting { this[PreferenceKeys.dailyAlarmEnabled] = enabled }
+    }
+
+    fun adjustDailyAlarmHour(delta: Int) {
+        _uiState.update { state ->
+            state.copy(dailyAlarmHour = (state.dailyAlarmHour + delta).floorMod(24))
+        }
+        persistSetting { this[PreferenceKeys.dailyAlarmHour] = _uiState.value.dailyAlarmHour }
+    }
+
+    fun adjustDailyAlarmMinute(delta: Int) {
+        _uiState.update { state ->
+            state.copy(dailyAlarmMinute = (state.dailyAlarmMinute + delta).floorMod(60))
+        }
+        persistSetting { this[PreferenceKeys.dailyAlarmMinute] = _uiState.value.dailyAlarmMinute }
+    }
+
+    fun toggleBreakReminder(enabled: Boolean) {
+        _uiState.update { it.copy(breakReminderEnabled = enabled) }
+        persistSetting { this[PreferenceKeys.breakReminder] = enabled }
+    }
+
+    fun setThemePreset(preset: ThemePreset) {
+        _uiState.update { state ->
+            applyThemePresetProfile(
+                state = state.copy(selectedThemePreset = preset, activeThemePreset = preset.resolveActive(state.currentHour24)),
+                preset = preset.resolveActive(state.currentHour24)
+            )
+        }
+        persistSetting { this[PreferenceKeys.themePreset] = preset.name }
+    }
+
+    fun toggleWhiteNoise(enabled: Boolean) {
+        _uiState.update { it.copy(whiteNoiseEnabled = enabled) }
+        if (enabled) whiteNoisePlayer.start() else whiteNoisePlayer.stop()
+        persistSetting { this[PreferenceKeys.whiteNoise] = enabled }
+    }
+
     fun setAppActive(active: Boolean) {
         if (isAppActive == active) return
         isAppActive = active
@@ -506,8 +847,15 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         val orientation = FloatArray(3)
         SensorManager.getOrientation(rotationMatrix, orientation)
 
+        if (orientation.any { !it.isFinite() }) {
+            return
+        }
+
         val currentPitch = orientation[1]
         val currentRoll = orientation[2]
+        if (!currentPitch.isFinite() || !currentRoll.isFinite()) {
+            return
+        }
         if (basePitch == null || baseRoll == null) {
             basePitch = currentPitch
             baseRoll = currentRoll
@@ -516,18 +864,23 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         val targetOffset = Offset(
             x = (currentRoll - (baseRoll ?: currentRoll)) * 45f,
             y = (currentPitch - (basePitch ?: currentPitch)) * 45f
-        )
+        ).sanitize()
         val smoothing = 0.18f
         smoothParallax = Offset(
             x = smoothParallax.x + (targetOffset.x - smoothParallax.x) * smoothing,
             y = smoothParallax.y + (targetOffset.y - smoothParallax.y) * smoothing
-        )
+        ).sanitize()
+
+        if (!smoothParallax.x.isFinite() || !smoothParallax.y.isFinite()) {
+            smoothParallax = Offset.Zero
+            return
+        }
 
         val current = _uiState.value.parallaxOffset
         if (abs(smoothParallax.x - current.x) < 0.15f && abs(smoothParallax.y - current.y) < 0.15f) {
             return
         }
-        _uiState.update { it.copy(parallaxOffset = smoothParallax) }
+        _uiState.update { it.copy(parallaxOffset = smoothParallax.sanitize()) }
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
@@ -538,7 +891,17 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         runCatching { appContext.unregisterReceiver(batteryReceiver) }
         locationJob?.cancel()
         mediaPlayer?.release()
+        loudnessEnhancer?.release()
+        whiteNoisePlayer.stop()
         mediaPlayer = null
+        loudnessEnhancer = null
         super.onCleared()
     }
 }
+
+private fun Offset.sanitize(): Offset = Offset(
+    x = x.takeIf { it.isFinite() } ?: 0f,
+    y = y.takeIf { it.isFinite() } ?: 0f
+)
+
+private fun Int.floorMod(mod: Int): Int = ((this % mod) + mod) % mod

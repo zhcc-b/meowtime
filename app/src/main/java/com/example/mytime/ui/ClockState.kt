@@ -10,6 +10,7 @@ data class ClockState(
     val hour: String = "00",
     val minute: String = "00",
     val second: String = "00",
+    val currentHour24: Int = 0,
     val amPm: String = "",
     val date: String = "--",
     val dayOfWeek: String = "--",
@@ -35,6 +36,33 @@ data class ClockState(
     // 字体设置
     val selectedFont: ClockFont = AvailableClockFonts[0],
     val allFonts: List<ClockFont> = AvailableClockFonts,
+
+    // 模式与专注
+    val clockMode: ClockMode = ClockMode.CLOCK,
+    val timerRunning: Boolean = false,
+    val pomodoroPhase: PomodoroPhase = PomodoroPhase.FOCUS,
+    val pomodoroFocusMinutes: Int = 25,
+    val pomodoroBreakMinutes: Int = 5,
+    val pomodoroRemainingSeconds: Int = 25 * 60,
+    val countdownDurationMinutes: Int = 10,
+    val countdownRemainingSeconds: Int = 10 * 60,
+    val stopwatchElapsedSeconds: Int = 0,
+    val focusedSecondsToday: Int = 0,
+    val completedPomodoros: Int = 0,
+    val completedBreaks: Int = 0,
+
+    // 提醒与陪伴
+    val hourlyChimeEnabled: Boolean = false,
+    val dailyAlarmEnabled: Boolean = false,
+    val dailyAlarmHour: Int = 8,
+    val dailyAlarmMinute: Int = 0,
+    val breakReminderEnabled: Boolean = true,
+    val companionMessage: String = "",
+
+    // 主题与环境
+    val selectedThemePreset: ThemePreset = ThemePreset.AUTO,
+    val activeThemePreset: ThemePreset = ThemePreset.SERENE,
+    val whiteNoiseEnabled: Boolean = false,
 
     // 视差位移 (由陀螺仪控制)
     val parallaxOffset: Offset = Offset.Zero,
