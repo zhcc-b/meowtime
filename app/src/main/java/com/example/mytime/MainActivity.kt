@@ -30,7 +30,9 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.mytime.ui.ClockViewModel
+import com.example.mytime.ui.ClockMode
 import com.example.mytime.ui.ParticleWeather
+import com.example.mytime.ui.ThemePreset
 import com.example.mytime.ui.theme.FlipClockScreen
 import com.example.mytime.ui.theme.MytimeTheme
 
@@ -160,7 +162,20 @@ class MainActivity : ComponentActivity() {
                         onSelectParticleWeather = { weather: ParticleWeather -> viewModel.setParticleWeather(weather) },
                         onToggleCats = { viewModel.toggleCats(it) },
                         onToggleDynamicWallpaper = { viewModel.toggleDynamicWallpaper(it) },
-                        onToggle24HourFormat = { viewModel.toggle24HourFormat(it) }
+                        onToggle24HourFormat = { viewModel.toggle24HourFormat(it) },
+                        onSetClockMode = { mode: ClockMode -> viewModel.setClockMode(mode) },
+                        onToggleModeRunning = { viewModel.toggleModeRunning() },
+                        onResetMode = { viewModel.resetActiveMode() },
+                        onAdjustPomodoroFocus = { viewModel.adjustPomodoroFocus(it) },
+                        onAdjustPomodoroBreak = { viewModel.adjustPomodoroBreak(it) },
+                        onAdjustCountdown = { viewModel.adjustCountdownDuration(it) },
+                        onToggleHourlyChime = { viewModel.toggleHourlyChime(it) },
+                        onToggleDailyAlarm = { viewModel.toggleDailyAlarm(it) },
+                        onAdjustDailyAlarmHour = { viewModel.adjustDailyAlarmHour(it) },
+                        onAdjustDailyAlarmMinute = { viewModel.adjustDailyAlarmMinute(it) },
+                        onToggleBreakReminder = { viewModel.toggleBreakReminder(it) },
+                        onSetThemePreset = { preset: ThemePreset -> viewModel.setThemePreset(preset) },
+                        onToggleWhiteNoise = { viewModel.toggleWhiteNoise(it) }
                     )
                 }
             }

@@ -654,7 +654,7 @@ private class CatFilamentRenderer(private val context: Context) {
             val box = asset.boundingBox
             val center = box.center
             val halfExtent = box.halfExtent
-            val modelScale = 0.5f
+            val modelScale = if (heightPx > widthPx) 0.82f else 0.5f
             val start = initialPoint(index)
             cats += CatActor(
                 name = name,
@@ -859,6 +859,11 @@ private class CatFilamentRenderer(private val context: Context) {
     }
 
     private fun generateWalkTarget(timeRect: RectF, current: PointF, laneY: Float): PointF {
+        if (heightPx > widthPx) {
+            val x = Random.nextFloat() * (widthPx * 0.68f - widthPx * 0.32f) + widthPx * 0.32f
+            val y = laneY.coerceIn(heightPx * 0.90f, heightPx * 0.965f)
+            return PointF(x, y)
+        }
         val sideMid = widthPx * 0.5f
         val targetXRange = if (current.x < sideMid) {
             (widthPx * 0.62f)..(widthPx * 0.90f)
@@ -1005,8 +1010,14 @@ private class CatFilamentRenderer(private val context: Context) {
     }
 
     private fun initialPoint(index: Int): PointF {
-        val baseY = heightPx * 0.992f
-        val x = if (index == 0) widthPx * 0.08f else widthPx * 0.78f
+        val baseY = if (heightPx > widthPx) heightPx * 0.955f else heightPx * 0.992f
+        val x = if (heightPx > widthPx) {
+            widthPx * 0.5f
+        } else if (index == 0) {
+            widthPx * 0.08f
+        } else {
+            widthPx * 0.78f
+        }
         return PointF(x, baseY)
     }
 
