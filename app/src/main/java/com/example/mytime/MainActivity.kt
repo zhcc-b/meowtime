@@ -175,6 +175,7 @@ class MainActivity : ComponentActivity() {
                         onAdjustDailyAlarmMinute = { viewModel.adjustDailyAlarmMinute(it) },
                         onToggleBreakReminder = { viewModel.toggleBreakReminder(it) },
                         onSetThemePreset = { preset: ThemePreset -> viewModel.setThemePreset(preset) },
+                        onToggleThemeEdgeLight = { viewModel.toggleThemeEdgeLight(it) },
                         onToggleWhiteNoise = { viewModel.toggleWhiteNoise(it) }
                     )
                 }

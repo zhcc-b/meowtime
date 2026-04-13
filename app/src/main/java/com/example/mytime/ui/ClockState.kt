@@ -62,6 +62,7 @@ data class ClockState(
     // 主题与环境
     val selectedThemePreset: ThemePreset = ThemePreset.AUTO,
     val activeThemePreset: ThemePreset = ThemePreset.SERENE,
+    val isThemeEdgeLightEnabled: Boolean = true,
     val whiteNoiseEnabled: Boolean = false,
     val edgeLightMode: EdgeLightMode = EdgeLightMode.NONE,
 

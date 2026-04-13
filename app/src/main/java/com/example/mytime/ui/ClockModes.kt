@@ -26,7 +26,10 @@ enum class EdgeLightMode {
     NONE,
     BREAK_REMINDER,
     TIMER_ALERT,
-    STOPWATCH_ACTIVE
+    STOPWATCH_ACTIVE,
+    AMBIENT_PLAYFUL,
+    AMBIENT_SERENE,
+    AMBIENT_NIGHT
 }
 
 data class ThemePresetProfile(

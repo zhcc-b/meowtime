@@ -100,6 +100,7 @@ fun FlipClockScreen(
     onAdjustDailyAlarmMinute: (Int) -> Unit,
     onToggleBreakReminder: (Boolean) -> Unit,
     onSetThemePreset: (ThemePreset) -> Unit,
+    onToggleThemeEdgeLight: (Boolean) -> Unit,
     onToggleWhiteNoise: (Boolean) -> Unit
 ) {
     val currentFont = state.selectedFont.family
@@ -240,11 +241,12 @@ fun FlipClockScreen(
                     }
                 )
             },
+            onToggleThemeEdgeLight = onToggleThemeEdgeLight,
             onToggleWhiteNoise = onToggleWhiteNoise
         )
 
         EdgeLightOverlay(
-            mode = state.edgeLightMode,
+            mode = state.effectiveEdgeLightMode(),
             modifier = Modifier.fillMaxSize()
         )
 
@@ -322,6 +324,16 @@ private data class OverlayInfo(
     val body: String
 )
 
+private fun ClockState.effectiveEdgeLightMode(): EdgeLightMode {
+    if (edgeLightMode != EdgeLightMode.NONE) return edgeLightMode
+    if (!isThemeEdgeLightEnabled) return EdgeLightMode.NONE
+    return when (activeThemePreset) {
+        ThemePreset.PLAYFUL -> EdgeLightMode.AMBIENT_PLAYFUL
+        ThemePreset.NIGHT -> EdgeLightMode.AMBIENT_NIGHT
+        else -> EdgeLightMode.NONE
+    }
+}
+
 @Composable
 private fun ExplanationOverlay(
     info: OverlayInfo,
@@ -382,9 +394,12 @@ private fun EdgeLightOverlay(
         animationSpec = infiniteRepeatable(
             animation = tween(
                 durationMillis = when (mode) {
-                    EdgeLightMode.BREAK_REMINDER -> 4200
-                    EdgeLightMode.TIMER_ALERT -> 2600
-                    EdgeLightMode.STOPWATCH_ACTIVE -> 6200
+                    EdgeLightMode.BREAK_REMINDER -> 3600
+                    EdgeLightMode.TIMER_ALERT -> 2400
+                    EdgeLightMode.STOPWATCH_ACTIVE -> 5400
+                    EdgeLightMode.AMBIENT_PLAYFUL -> 6800
+                    EdgeLightMode.AMBIENT_SERENE -> 9200
+                    EdgeLightMode.AMBIENT_NIGHT -> 12000
                     EdgeLightMode.NONE -> 4000
                 },
                 easing = LinearEasing
@@ -393,14 +408,17 @@ private fun EdgeLightOverlay(
         label = "edge_color_shift"
     )
     val pulse by transition.animateFloat(
-        initialValue = 0.84f,
+        initialValue = 0.90f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(
                 durationMillis = when (mode) {
-                    EdgeLightMode.BREAK_REMINDER -> 1050
-                    EdgeLightMode.TIMER_ALERT -> 800
-                    EdgeLightMode.STOPWATCH_ACTIVE -> 1800
+                    EdgeLightMode.BREAK_REMINDER -> 1000
+                    EdgeLightMode.TIMER_ALERT -> 760
+                    EdgeLightMode.STOPWATCH_ACTIVE -> 1600
+                    EdgeLightMode.AMBIENT_PLAYFUL -> 2200
+                    EdgeLightMode.AMBIENT_SERENE -> 2800
+                    EdgeLightMode.AMBIENT_NIGHT -> 3600
                     EdgeLightMode.NONE -> 1000
                 },
                 easing = EaseInOutSine
@@ -409,43 +427,79 @@ private fun EdgeLightOverlay(
         ),
         label = "edge_pulse"
     )
+
     val overlayAlpha = when (mode) {
-        EdgeLightMode.BREAK_REMINDER -> 0.82f
+        EdgeLightMode.BREAK_REMINDER -> 0.94f
         EdgeLightMode.TIMER_ALERT -> 1f
-        EdgeLightMode.STOPWATCH_ACTIVE -> 0.56f
+        EdgeLightMode.STOPWATCH_ACTIVE -> 0.86f
+        EdgeLightMode.AMBIENT_PLAYFUL -> 0.62f
+        EdgeLightMode.AMBIENT_SERENE -> 0.34f
+        EdgeLightMode.AMBIENT_NIGHT -> 0.28f
         EdgeLightMode.NONE -> 0f
     }
     val palette = when (mode) {
         EdgeLightMode.BREAK_REMINDER -> listOf(
-            Color(0xFFFF7DB3),
-            Color(0xFFFFC46A),
-            Color(0xFF8FD8FF),
-            Color(0xFFC6A3FF)
+            Color(0xFF7CFF74),
+            Color(0xFF5DEBFF),
+            Color(0xFF5D76FF),
+            Color(0xFFC46BFF),
+            Color(0xFFFF5FB5),
+            Color(0xFFFF9C43),
+            Color(0xFF7CFF74)
         )
         EdgeLightMode.TIMER_ALERT -> listOf(
-            Color(0xFFFF8A8A),
-            Color(0xFFFFD36E),
-            Color(0xFF8EE3FF),
-            Color(0xFFB896FF)
+            Color(0xFF82FF73),
+            Color(0xFF62ECFF),
+            Color(0xFF4E77FF),
+            Color(0xFFC56EFF),
+            Color(0xFFFF6DB9),
+            Color(0xFFFFA34E),
+            Color(0xFF82FF73)
         )
         EdgeLightMode.STOPWATCH_ACTIVE -> listOf(
-            Color(0xFF8FD8FF),
-            Color(0xFFBCA8FF),
-            Color(0xFFFFB6D9),
-            Color(0xFF91E8FF)
+            Color(0xFF8EF67A),
+            Color(0xFF76E7FF),
+            Color(0xFF6491FF),
+            Color(0xFFD08AFF),
+            Color(0xFFFF8DCA),
+            Color(0xFFFFB86E),
+            Color(0xFF8EF67A)
+        )
+        EdgeLightMode.AMBIENT_PLAYFUL -> listOf(
+            Color(0xFF76FF78),
+            Color(0xFF72E8FF),
+            Color(0xFF6786FF),
+            Color(0xFFD58EFF),
+            Color(0xFFFF93CE),
+            Color(0xFFFFB568),
+            Color(0xFF76FF78)
+        )
+        EdgeLightMode.AMBIENT_SERENE -> listOf(
+            Color(0xFF96E8FF),
+            Color(0xFF8FC7FF),
+            Color(0xFFA5B8FF),
+            Color(0xFFC0B0FF),
+            Color(0xFFA7D8FF),
+            Color(0xFF96E8FF)
+        )
+        EdgeLightMode.AMBIENT_NIGHT -> listOf(
+            Color(0xFF77C5FF),
+            Color(0xFF6E91FF),
+            Color(0xFF8E7CFF),
+            Color(0xFFB07BFF),
+            Color(0xFF6E91FF),
+            Color(0xFF77C5FF)
         )
         EdgeLightMode.NONE -> emptyList()
     }
 
     fun shiftedStops(colors: List<Color>, alphaMultiplier: Float): Array<Pair<Float, Color>> {
         fun safeAlpha(value: Float) = value.coerceIn(0f, 1f)
-        val base = listOf(
-            0f to colors[0].copy(alpha = safeAlpha(alphaMultiplier * overlayAlpha * pulse)),
-            0.25f to colors[1].copy(alpha = safeAlpha(alphaMultiplier * overlayAlpha * pulse)),
-            0.5f to colors[2].copy(alpha = safeAlpha(alphaMultiplier * overlayAlpha * pulse)),
-            0.75f to colors[3].copy(alpha = safeAlpha(alphaMultiplier * overlayAlpha * pulse)),
-            1f to colors[0].copy(alpha = safeAlpha(alphaMultiplier * overlayAlpha * pulse))
-        )
+        val lastIndex = (colors.size - 1).coerceAtLeast(1)
+        val base = colors.mapIndexed { index, color ->
+            val stop = index.toFloat() / lastIndex.toFloat()
+            stop to color.copy(alpha = safeAlpha(alphaMultiplier * overlayAlpha * pulse))
+        }
         val shifted = buildList {
             base.forEach { (stop, color) ->
                 val shiftedStop = stop + colorShift
@@ -458,49 +512,78 @@ private fun EdgeLightOverlay(
 
     Canvas(modifier = modifier) {
         fun safeAlpha(value: Float): Float = value.coerceIn(0f, 1f)
-        val inset = 8.dp.toPx()
+        val inset = 6.dp.toPx()
         val outerStroke = when (mode) {
-            EdgeLightMode.TIMER_ALERT -> 12.dp.toPx()
-            EdgeLightMode.BREAK_REMINDER -> 11.dp.toPx()
-            EdgeLightMode.STOPWATCH_ACTIVE -> 8.dp.toPx()
+            EdgeLightMode.TIMER_ALERT -> 11.dp.toPx()
+            EdgeLightMode.BREAK_REMINDER -> 10.dp.toPx()
+            EdgeLightMode.STOPWATCH_ACTIVE -> 9.dp.toPx()
+            EdgeLightMode.AMBIENT_PLAYFUL -> 8.dp.toPx()
+            EdgeLightMode.AMBIENT_SERENE -> 6.dp.toPx()
+            EdgeLightMode.AMBIENT_NIGHT -> 5.dp.toPx()
             EdgeLightMode.NONE -> 0f
         }
-        val glowStroke = outerStroke * 1.9f
-        val coreStroke = outerStroke * 0.42f
-        val cornerRadiusPx = 38.dp.toPx()
+        val glowStroke = when (mode) {
+            EdgeLightMode.AMBIENT_NIGHT -> outerStroke * 1.9f
+            EdgeLightMode.AMBIENT_SERENE -> outerStroke * 2.1f
+            else -> outerStroke * 2.6f
+        }
+        val coreStroke = outerStroke * 0.26f
+        val haloStroke = outerStroke * 1.4f
+        val cornerRadiusPx = 42.dp.toPx()
         val corner = CornerRadius(cornerRadiusPx, cornerRadiusPx)
         val rectTopLeft = Offset(inset, inset)
         val rectSize = Size(size.width - inset * 2f, size.height - inset * 2f)
+        val glowBrush = Brush.sweepGradient(
+            colorStops = shiftedStops(palette, if (mode == EdgeLightMode.AMBIENT_NIGHT) 0.24f else 0.36f),
+            center = center
+        )
+        val edgeBrush = Brush.sweepGradient(
+            colorStops = shiftedStops(palette, when (mode) {
+                EdgeLightMode.AMBIENT_SERENE -> 0.72f
+                EdgeLightMode.AMBIENT_NIGHT -> 0.58f
+                else -> 0.96f
+            }),
+            center = center
+        )
 
         drawRoundRect(
-            brush = Brush.sweepGradient(
-                colorStops = shiftedStops(palette, 0.34f),
-                center = center
-            ),
+            brush = glowBrush,
             topLeft = rectTopLeft,
             size = rectSize,
             cornerRadius = corner,
             style = Stroke(width = glowStroke)
         )
         drawRoundRect(
-            brush = Brush.sweepGradient(
-                colorStops = shiftedStops(palette, 0.92f),
-                center = center
-            ),
+            brush = glowBrush,
+            topLeft = rectTopLeft,
+            size = rectSize,
+            cornerRadius = corner,
+            style = Stroke(width = haloStroke)
+        )
+        drawRoundRect(
+            brush = edgeBrush,
             topLeft = rectTopLeft,
             size = rectSize,
             cornerRadius = corner,
             style = Stroke(width = outerStroke)
         )
         drawRoundRect(
-            color = Color.White.copy(alpha = safeAlpha(0.58f * overlayAlpha * pulse)),
+            color = Color.White.copy(alpha = safeAlpha(when (mode) {
+                EdgeLightMode.AMBIENT_SERENE -> 0.22f * overlayAlpha * pulse
+                EdgeLightMode.AMBIENT_NIGHT -> 0.14f * overlayAlpha * pulse
+                else -> 0.38f * overlayAlpha * pulse
+            })),
             topLeft = rectTopLeft,
             size = rectSize,
             cornerRadius = corner,
             style = Stroke(width = coreStroke)
         )
         drawRoundRect(
-            color = Color.White.copy(alpha = safeAlpha(0.10f * overlayAlpha)),
+            color = Color.White.copy(alpha = safeAlpha(when (mode) {
+                EdgeLightMode.AMBIENT_SERENE -> 0.06f * overlayAlpha
+                EdgeLightMode.AMBIENT_NIGHT -> 0.04f * overlayAlpha
+                else -> 0.12f * overlayAlpha
+            })),
             topLeft = rectTopLeft,
             size = rectSize,
             cornerRadius = corner,
@@ -1324,6 +1407,7 @@ private fun SettingsMenu(
     onAdjustDailyAlarmMinute: (Int) -> Unit,
     onToggleBreakReminder: (Boolean) -> Unit,
     onSetThemePreset: (ThemePreset) -> Unit,
+    onToggleThemeEdgeLight: (Boolean) -> Unit,
     onToggleWhiteNoise: (Boolean) -> Unit
 ) {
     if (visible) {
@@ -1387,6 +1471,7 @@ private fun SettingsMenu(
                             active = state.activeThemePreset,
                             onSelect = onSetThemePreset
                         )
+                        SettingToggle(stringResource(id = R.string.settings_theme_edge_light), state.isThemeEdgeLightEnabled, onToggleThemeEdgeLight)
                         SettingToggle(stringResource(id = R.string.settings_hourly_chime), state.hourlyChimeEnabled, onToggleHourlyChime)
                         SettingToggle(stringResource(id = R.string.settings_break_reminder), state.breakReminderEnabled, onToggleBreakReminder)
                         SettingToggle(stringResource(id = R.string.settings_daily_alarm), state.dailyAlarmEnabled, onToggleDailyAlarm)

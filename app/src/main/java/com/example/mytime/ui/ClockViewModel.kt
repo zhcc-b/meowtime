@@ -74,6 +74,7 @@ private object PreferenceKeys {
     val dailyAlarmMinute = intPreferencesKey("daily_alarm_minute")
     val breakReminder = booleanPreferencesKey("break_reminder")
     val themePreset = stringPreferencesKey("theme_preset")
+    val themeEdgeLight = booleanPreferencesKey("theme_edge_light")
     val whiteNoise = booleanPreferencesKey("white_noise")
 }
 
@@ -173,6 +174,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         dailyAlarmMinute = preferences[PreferenceKeys.dailyAlarmMinute] ?: state.dailyAlarmMinute,
                         breakReminderEnabled = preferences[PreferenceKeys.breakReminder] ?: state.breakReminderEnabled,
                         selectedThemePreset = preset,
+                        isThemeEdgeLightEnabled = preferences[PreferenceKeys.themeEdgeLight] ?: state.isThemeEdgeLightEnabled,
                         whiteNoiseEnabled = preferences[PreferenceKeys.whiteNoise] ?: state.whiteNoiseEnabled
                     )
                 }
@@ -816,6 +818,11 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
             )
         }
         persistSetting { this[PreferenceKeys.themePreset] = preset.name }
+    }
+
+    fun toggleThemeEdgeLight(enabled: Boolean) {
+        _uiState.update { it.copy(isThemeEdgeLightEnabled = enabled) }
+        persistSetting { this[PreferenceKeys.themeEdgeLight] = enabled }
     }
 
     private fun showEdgeLight(mode: EdgeLightMode, durationMs: Long? = null) {
