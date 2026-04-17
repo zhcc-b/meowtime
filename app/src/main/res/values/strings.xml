@@ -20,8 +20,8 @@
     <string name="settings_theme_active">Active: %1$s</string>
     <string name="settings_theme_edge_light">Theme Edge Light</string>
     <string name="tap_anywhere_to_close">Tap anywhere to close</string>
-    <string name="current_preset_label">Current Preset: %1$s Mode</string>
-    <string name="current_preset_compact">%1$s Preset</string>
+    <string name="current_preset_label">Current Theme: %1$s</string>
+    <string name="current_preset_compact">%1$s</string>
     <string name="seconds_label">Seconds</string>
     <string name="settings_clock_font">Clock Font</string>
     <string name="settings_done">Done</string>

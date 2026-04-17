@@ -20,8 +20,8 @@
     <string name="settings_theme_active">当前生效：%1$s</string>
     <string name="settings_theme_edge_light">主题边框光</string>
     <string name="tap_anywhere_to_close">点击任意处关闭</string>
-    <string name="current_preset_label">当前预设：%1$s模式</string>
-    <string name="current_preset_compact">%1$s预设</string>
+    <string name="current_preset_label">当前主题：%1$s</string>
+    <string name="current_preset_compact">%1$s</string>
     <string name="seconds_label">秒钟</string>
     <string name="settings_clock_font">时钟字体</string>
     <string name="settings_done">完成</string>

@@ -15,6 +15,8 @@ import android.location.Geocoder
 import android.location.Location
 import android.location.LocationManager
 import android.media.MediaPlayer
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.media.audiofx.LoudnessEnhancer
 import android.os.BatteryManager
 import android.os.Build
@@ -79,6 +81,11 @@ private object PreferenceKeys {
 }
 
 class ClockViewModel(application: Application) : AndroidViewModel(application), SensorEventListener {
+
+    private enum class ReminderCue {
+        DEFAULT,
+        HOURLY_CHIME
+    }
 
     private val _uiState = MutableStateFlow(ClockState())
     val uiState: StateFlow<ClockState> = _uiState.asStateFlow()
@@ -193,6 +200,16 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
             var lastMinute = -1
             var nextWeatherChangeEpochSec = 0L
             var activeWeather = _uiState.value.particleWeather
+            val recentAutoWeathers = ArrayDeque<ParticleWeather>()
+
+            fun rememberAutoWeather(weather: ParticleWeather) {
+                recentAutoWeathers.addLast(weather)
+                while (recentAutoWeathers.size > 3) {
+                    recentAutoWeathers.removeFirst()
+                }
+            }
+
+            rememberAutoWeather(activeWeather)
             while (isActive) {
                 val now = ZonedDateTime.now()
                 val currentMinute = now.minute
@@ -206,18 +223,29 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                     if (activeWeather != _uiState.value.particleWeather) {
                         activeWeather = _uiState.value.particleWeather
                     }
+                    val weatherCandidates = weatherCandidatesForPreset(
+                        preset = resolvedPreset,
+                        hour24 = hour24,
+                        allowBrightWeather = !isNightQuietHours
+                    )
                     if (isNightQuietHours && activeWeather.isBrightWeather()) {
                         activeWeather = pickRandomWeather(
                             excluding = activeWeather,
-                            allowBrightWeather = false
+                            candidates = weatherCandidates,
+                            preferCalm = true,
+                            recent = recentAutoWeathers
                         )
+                        rememberAutoWeather(activeWeather)
                         nextWeatherChangeEpochSec = nowEpochSec + (8 * 60 * 60)
                     }
                     if (nextWeatherChangeEpochSec == 0L || nowEpochSec >= nextWeatherChangeEpochSec) {
                         activeWeather = pickRandomWeather(
                             excluding = activeWeather,
-                            allowBrightWeather = !isNightQuietHours
+                            candidates = weatherCandidates,
+                            preferCalm = isNightQuietHours,
+                            recent = recentAutoWeathers
                         )
+                        rememberAutoWeather(activeWeather)
                         nextWeatherChangeEpochSec = nowEpochSec + (8 * 60 * 60)
                     }
                 } else {
@@ -226,14 +254,19 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                 }
 
                 var shouldPlayReminder = false
+                var reminderCue = ReminderCue.DEFAULT
                 var edgeLightMode: EdgeLightMode? = null
                 var edgeLightDurationMs: Long? = null
                 _uiState.update { state ->
                     var workingState = state
                     if (workingState.activeThemePreset != resolvedPreset) {
+                        // In AUTO mode the preset switches automatically on a schedule;
+                        // take the opportunity to also randomly pick a fresh font.
+                        val isAutoMode = workingState.selectedThemePreset == ThemePreset.AUTO
                         workingState = applyThemePresetProfile(
                             state = workingState.copy(activeThemePreset = resolvedPreset),
-                            preset = resolvedPreset
+                            preset = resolvedPreset,
+                            randomizeFont = isAutoMode
                         )
                     }
 
@@ -260,7 +293,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         h12.toString().padStart(2, '0')
                     }
                     val amPm = if (workingState.is24HourFormat) "" else now.format(amPmFormatter)
-                    val onlineWallpaper = if (workingState.isDynamicWallpaperEnabled) {
+                    val onlineWallpaper = if (!isNightQuietHours && workingState.isDynamicWallpaperEnabled) {
                         getOnlineBackgroundForTime(now, hour24)
                     } else {
                         null
@@ -273,6 +306,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                     if (workingState.hourlyChimeEnabled && currentMinute == 0 && second == 0 && hourlyMarker != lastHourlyChimeMarker) {
                         lastHourlyChimeMarker = hourlyMarker
                         shouldPlayReminder = true
+                        reminderCue = ReminderCue.HOURLY_CHIME
                         companionMessage = appContext.getString(R.string.reminder_hourly_chime, displayHour)
                     }
                     if (
@@ -295,7 +329,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         amPm = amPm,
                         date = now.format(dateFormatter),
                         dayOfWeek = now.dayOfWeek.getDisplayName(TextStyle.FULL, locale),
-                        backgroundRes = if (workingState.isDynamicWallpaperEnabled) null else R.drawable.jiguang,
+                        // Avoid bright/sunny background imagery during quiet night hours.
+                        backgroundRes = if (isNightQuietHours || workingState.isDynamicWallpaperEnabled) null else R.drawable.jiguang,
                         backgroundUrl = onlineWallpaper,
                         particleWeather = if (workingState.isParticleWeatherAuto) activeWeather else workingState.particleWeather,
                         burnInOffset = burnInOffset,
@@ -303,7 +338,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                     )
                 }
                 if (shouldPlayReminder) {
-                    playReminderCue()
+                    playReminderCue(reminderCue)
                 }
                 if (edgeLightMode != null) {
                     showEdgeLight(edgeLightMode!!, edgeLightDurationMs)
@@ -321,18 +356,107 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         tickerJob = null
     }
 
-    private fun pickRandomWeather(excluding: ParticleWeather, allowBrightWeather: Boolean = true): ParticleWeather {
-        val candidates = if (allowBrightWeather) {
-            ParticleWeather.entries
-        } else {
-            ParticleWeather.entries.filterNot { it.isBrightWeather() }
+    private fun pickRandomWeather(
+        excluding: ParticleWeather,
+        candidates: List<ParticleWeather>,
+        preferCalm: Boolean = false,
+        recent: Collection<ParticleWeather> = emptyList()
+    ): ParticleWeather {
+        val allowed = candidates.ifEmpty { ParticleWeather.entries.toList() }
+        val options = allowed.filter { it != excluding }.ifEmpty { allowed }
+        if (options.isEmpty()) return excluding
+
+        val weightedOptions = buildList {
+            options.forEach { weather ->
+                val baseWeight = weather.weight(preferCalm = preferCalm)
+                // Lower chance of repeating very recent weather types.
+                val adjustedWeight = if (recent.contains(weather)) {
+                    (baseWeight - 1).coerceAtLeast(1)
+                } else {
+                    baseWeight + 1
+                }
+                val weight = adjustedWeight.coerceAtLeast(1)
+                repeat(weight) { add(weather) }
+            }
         }
-        val options = candidates.filter { it != excluding }.ifEmpty { candidates }
-        return options[random.nextInt(options.size)]
+        return weightedOptions[random.nextInt(weightedOptions.size)]
     }
 
     private fun ParticleWeather.isBrightWeather(): Boolean {
         return this == ParticleWeather.SUNNY || this == ParticleWeather.CLOUDY
+    }
+
+    private fun weatherCandidatesForPreset(
+        preset: ThemePreset,
+        hour24: Int,
+        allowBrightWeather: Boolean
+    ): List<ParticleWeather> {
+        val base = when (preset) {
+            ThemePreset.FOCUS -> listOf(
+                ParticleWeather.WIND,
+                ParticleWeather.CLOUDY,
+                ParticleWeather.FOG,
+                ParticleWeather.DRIZZLE,
+                ParticleWeather.RAIN,
+                ParticleWeather.HAIL
+            )
+            ThemePreset.PLAYFUL -> listOf(
+                ParticleWeather.SUNNY,
+                ParticleWeather.CLOUDY,
+                ParticleWeather.WIND,
+                ParticleWeather.DRIZZLE,
+                ParticleWeather.RAIN,
+                ParticleWeather.HAIL
+            )
+            ThemePreset.SERENE -> listOf(
+                ParticleWeather.CLOUDY,
+                ParticleWeather.FOG,
+                ParticleWeather.DRIZZLE,
+                ParticleWeather.RAIN,
+                ParticleWeather.SNOW,
+                ParticleWeather.WIND
+            )
+            ThemePreset.NIGHT -> listOf(
+                ParticleWeather.RAIN,
+                ParticleWeather.DRIZZLE,
+                ParticleWeather.HAIL
+            )
+            ThemePreset.AUTO -> weatherCandidatesForPreset(
+                preset = ThemePreset.AUTO.resolveActive(hour24),
+                hour24 = hour24,
+                allowBrightWeather = allowBrightWeather
+            )
+        }
+        return if (allowBrightWeather) {
+            base
+        } else {
+            base.filter { it.isNightSafeWeather() }
+        }
+    }
+
+    private fun ParticleWeather.isNightSafeWeather(): Boolean {
+        return when (this) {
+            ParticleWeather.SUNNY, ParticleWeather.CLOUDY, ParticleWeather.HAIL, ParticleWeather.BLIZZARD -> false
+            ParticleWeather.FOG, ParticleWeather.DRIZZLE, ParticleWeather.RAIN, ParticleWeather.SNOW, ParticleWeather.WIND -> true
+        }
+    }
+
+    private fun ParticleWeather.weight(preferCalm: Boolean): Int {
+        if (!preferCalm) {
+            return when (this) {
+                ParticleWeather.DRIZZLE -> 4
+                ParticleWeather.FOG -> 3
+                ParticleWeather.CLOUDY, ParticleWeather.RAIN, ParticleWeather.WIND, ParticleWeather.SNOW -> 2
+                ParticleWeather.SUNNY, ParticleWeather.HAIL, ParticleWeather.BLIZZARD -> 1
+            }
+        }
+        return when (this) {
+            ParticleWeather.DRIZZLE, ParticleWeather.FOG -> 5
+            ParticleWeather.RAIN, ParticleWeather.SNOW -> 3
+            ParticleWeather.WIND -> 2
+            ParticleWeather.CLOUDY -> 1
+            ParticleWeather.SUNNY, ParticleWeather.HAIL, ParticleWeather.BLIZZARD -> 1
+        }
     }
 
     private fun getOnlineBackgroundForTime(now: ZonedDateTime, hour: Int): String {
@@ -439,13 +563,21 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         }
     }
 
-    private fun applyThemePresetProfile(state: ClockState, preset: ThemePreset): ClockState {
+    private fun applyThemePresetProfile(
+        state: ClockState,
+        preset: ThemePreset,
+        randomizeFont: Boolean = false
+    ): ClockState {
         val profile = preset.profile()
-        val presetFont = AvailableClockFonts.find { it.name == profile.fontName } ?: state.selectedFont
+        val presetFont = if (randomizeFont) {
+            AvailableClockFonts.random()
+        } else {
+            AvailableClockFonts.find { it.name == profile.fontName } ?: state.selectedFont
+        }
         return state.copy(
             selectedFont = presetFont,
-            particleWeather = profile.weather,
-            isParticleWeatherAuto = false,
+            particleWeather = if (state.isParticleWeatherAuto) state.particleWeather else profile.weather,
+            isParticleWeatherAuto = state.isParticleWeatherAuto,
             isParticleSystemEnabled = profile.particlesEnabled,
             isCatSystemEnabled = profile.catsEnabled,
             isDynamicWallpaperEnabled = profile.dynamicWallpaperEnabled,
@@ -454,8 +586,19 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         )
     }
 
-    private fun playReminderCue() {
-        playAudio()
+    private fun playReminderCue(cue: ReminderCue = ReminderCue.DEFAULT) {
+        when (cue) {
+            ReminderCue.DEFAULT -> playAudio()
+            ReminderCue.HOURLY_CHIME -> playSystemChime()
+        }
+    }
+
+    private fun playSystemChime() {
+        val tone = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 90)
+        runCatching {
+            tone.startTone(ToneGenerator.TONE_PROP_BEEP2, 260)
+        }
+        tone.release()
     }
 
     fun fetchLocation(hasLocationPermission: Boolean) {
@@ -746,9 +889,21 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     fun setParticleWeatherAuto(auto: Boolean) {
         _uiState.update { state ->
             if (auto) {
+                val hour24 = state.currentHour24
+                val resolvedPreset = state.selectedThemePreset.resolveActive(hour24)
+                val isNightQuietHours = hour24 >= 23 || hour24 < 7
+                val weatherCandidates = weatherCandidatesForPreset(
+                    preset = resolvedPreset,
+                    hour24 = hour24,
+                    allowBrightWeather = !isNightQuietHours
+                )
                 state.copy(
                     isParticleWeatherAuto = true,
-                    particleWeather = pickRandomWeather(excluding = state.particleWeather)
+                    particleWeather = pickRandomWeather(
+                        excluding = state.particleWeather,
+                        candidates = weatherCandidates,
+                        preferCalm = isNightQuietHours
+                    )
                 )
             } else {
                 state.copy(isParticleWeatherAuto = false)

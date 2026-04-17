@@ -167,6 +167,7 @@ fun FlipClockScreen(
         FilamentCatOverlay(
             enabled = state.isCatSystemEnabled,
             weather = state.particleWeather,
+            theme = state.activeThemePreset,
             forbiddenRect = timeRect,
             modifier = Modifier
                 .fillMaxSize()
@@ -314,10 +315,10 @@ private data class AtmosphereBlob(
     val phase: Float
 )
 
-private val LiquidGlassTint = Color(0xFFD7E8FF)
-private val LiquidGlassCool = Color(0xFF9CC7FF)
-private val LiquidGlassShadow = Color(0xFF09111C)
-private val LiquidGlassText = Color(0xFFF7FBFF)
+private val LiquidGlassTint = Color(0xFFDCEBFF)
+private val LiquidGlassCool = Color(0xFFA8CDFF)
+private val LiquidGlassShadow = Color(0xFF060E18)
+private val LiquidGlassText = Color(0xFFF4F9FF)
 
 private data class OverlayInfo(
     val title: String,
@@ -328,7 +329,9 @@ private fun ClockState.effectiveEdgeLightMode(): EdgeLightMode {
     if (edgeLightMode != EdgeLightMode.NONE) return edgeLightMode
     if (!isThemeEdgeLightEnabled) return EdgeLightMode.NONE
     return when (activeThemePreset) {
+        ThemePreset.FOCUS -> EdgeLightMode.AMBIENT_FOCUS
         ThemePreset.PLAYFUL -> EdgeLightMode.AMBIENT_PLAYFUL
+        ThemePreset.SERENE -> EdgeLightMode.AMBIENT_SERENE
         ThemePreset.NIGHT -> EdgeLightMode.AMBIENT_NIGHT
         else -> EdgeLightMode.NONE
     }
@@ -397,9 +400,10 @@ private fun EdgeLightOverlay(
                     EdgeLightMode.BREAK_REMINDER -> 3600
                     EdgeLightMode.TIMER_ALERT -> 2400
                     EdgeLightMode.STOPWATCH_ACTIVE -> 5400
-                    EdgeLightMode.AMBIENT_PLAYFUL -> 6800
-                    EdgeLightMode.AMBIENT_SERENE -> 9200
-                    EdgeLightMode.AMBIENT_NIGHT -> 12000
+                    EdgeLightMode.AMBIENT_FOCUS -> 7200
+                    EdgeLightMode.AMBIENT_PLAYFUL -> 5600
+                    EdgeLightMode.AMBIENT_SERENE -> 10000
+                    EdgeLightMode.AMBIENT_NIGHT -> 16000
                     EdgeLightMode.NONE -> 4000
                 },
                 easing = LinearEasing
@@ -408,7 +412,7 @@ private fun EdgeLightOverlay(
         label = "edge_color_shift"
     )
     val pulse by transition.animateFloat(
-        initialValue = 0.90f,
+        initialValue = 0.88f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(
@@ -416,9 +420,10 @@ private fun EdgeLightOverlay(
                     EdgeLightMode.BREAK_REMINDER -> 1000
                     EdgeLightMode.TIMER_ALERT -> 760
                     EdgeLightMode.STOPWATCH_ACTIVE -> 1600
-                    EdgeLightMode.AMBIENT_PLAYFUL -> 2200
-                    EdgeLightMode.AMBIENT_SERENE -> 2800
-                    EdgeLightMode.AMBIENT_NIGHT -> 3600
+                    EdgeLightMode.AMBIENT_FOCUS -> 2600
+                    EdgeLightMode.AMBIENT_PLAYFUL -> 1800
+                    EdgeLightMode.AMBIENT_SERENE -> 3200
+                    EdgeLightMode.AMBIENT_NIGHT -> 4800
                     EdgeLightMode.NONE -> 1000
                 },
                 easing = EaseInOutSine
@@ -432,8 +437,9 @@ private fun EdgeLightOverlay(
         EdgeLightMode.BREAK_REMINDER -> 0.94f
         EdgeLightMode.TIMER_ALERT -> 1f
         EdgeLightMode.STOPWATCH_ACTIVE -> 0.86f
+        EdgeLightMode.AMBIENT_FOCUS -> 0.42f
         EdgeLightMode.AMBIENT_PLAYFUL -> 0.62f
-        EdgeLightMode.AMBIENT_SERENE -> 0.34f
+        EdgeLightMode.AMBIENT_SERENE -> 0.38f
         EdgeLightMode.AMBIENT_NIGHT -> 0.28f
         EdgeLightMode.NONE -> 0f
     }
@@ -465,49 +471,70 @@ private fun EdgeLightOverlay(
             Color(0xFFFFB86E),
             Color(0xFF8EF67A)
         )
+        // FOCUS: crisp steel-cyan → electric-blue → icy-white → cobalt — precision & alertness
+        EdgeLightMode.AMBIENT_FOCUS -> listOf(
+            Color(0xFF00C8FF),
+            Color(0xFF00A3FF),
+            Color(0xFF2979FF),
+            Color(0xFF00E5FF),
+            Color(0xFFB3EEFF),
+            Color(0xFF2979FF),
+            Color(0xFF00C8FF)
+        )
+        // PLAYFUL: full-spectrum pop — warm coral → gold → lime → cyan → violet → pink loop
         EdgeLightMode.AMBIENT_PLAYFUL -> listOf(
-            Color(0xFF76FF78),
-            Color(0xFF72E8FF),
-            Color(0xFF6786FF),
-            Color(0xFFD58EFF),
-            Color(0xFFFF93CE),
-            Color(0xFFFFB568),
-            Color(0xFF76FF78)
+            Color(0xFFFF6B6B),
+            Color(0xFFFFD93D),
+            Color(0xFF6BCB77),
+            Color(0xFF4ECDC4),
+            Color(0xFF45B7D1),
+            Color(0xFF9B59B6),
+            Color(0xFFFF6B6B)
         )
+        // SERENE: soft lavender → rose-water → mint → sky — calm & balanced
         EdgeLightMode.AMBIENT_SERENE -> listOf(
-            Color(0xFF96E8FF),
-            Color(0xFF8FC7FF),
-            Color(0xFFA5B8FF),
-            Color(0xFFC0B0FF),
-            Color(0xFFA7D8FF),
-            Color(0xFF96E8FF)
+            Color(0xFFB8A5E8),
+            Color(0xFFE8A5C4),
+            Color(0xFFA5D8C8),
+            Color(0xFFB8D8F0),
+            Color(0xFFD4B8E8),
+            Color(0xFFE8C4B8),
+            Color(0xFFB8A5E8)
         )
+        // NIGHT: deep indigo → midnight violet → dim teal — dim & atmospheric
         EdgeLightMode.AMBIENT_NIGHT -> listOf(
-            Color(0xFF77C5FF),
-            Color(0xFF6E91FF),
-            Color(0xFF8E7CFF),
-            Color(0xFFB07BFF),
-            Color(0xFF6E91FF),
-            Color(0xFF77C5FF)
+            Color(0xFF1A1A4E),
+            Color(0xFF2D1B69),
+            Color(0xFF11998E),
+            Color(0xFF1A1A4E),
+            Color(0xFF38006B),
+            Color(0xFF0D3B5E),
+            Color(0xFF1A1A4E)
         )
         EdgeLightMode.NONE -> emptyList()
     }
 
+    // Interpolates across the cyclic palette at evenly-spaced display positions offset by
+    // colorShift.  Because we sample rather than sort shifted stops, the sweep gradient
+    // has no seam at any point on the perimeter — the only requirement is that
+    // colors.first() == colors.last() (all palettes above satisfy this).
     fun shiftedStops(colors: List<Color>, alphaMultiplier: Float): Array<Pair<Float, Color>> {
-        fun safeAlpha(value: Float) = value.coerceIn(0f, 1f)
-        val lastIndex = (colors.size - 1).coerceAtLeast(1)
-        val base = colors.mapIndexed { index, color ->
-            val stop = index.toFloat() / lastIndex.toFloat()
-            stop to color.copy(alpha = safeAlpha(alphaMultiplier * overlayAlpha * pulse))
+        val alpha = (alphaMultiplier * overlayAlpha * pulse).coerceIn(0f, 1f)
+        val n = (colors.size - 1).coerceAtLeast(1)
+        val outCount = 48  // enough stops for smooth sweep without hurting perf
+        return Array(outCount + 1) { i ->
+            val displayPos = i.toFloat() / outCount          // 0.0 … 1.0
+            val palettePos  = (displayPos + colorShift) % 1f // cyclic sample offset
+            val exactIdx    = palettePos * n
+            val lo = exactIdx.toInt().coerceIn(0, n - 1)
+            val hi = (lo + 1).coerceAtMost(n)
+            val frac = exactIdx - lo
+            val c0 = colors[lo]; val c1 = colors[hi]
+            val r = c0.red   + (c1.red   - c0.red)   * frac
+            val g = c0.green + (c1.green - c0.green) * frac
+            val b = c0.blue  + (c1.blue  - c0.blue)  * frac
+            displayPos to Color(r, g, b, alpha)
         }
-        val shifted = buildList {
-            base.forEach { (stop, color) ->
-                val shiftedStop = stop + colorShift
-                add((shiftedStop % 1f) to color)
-                add((((shiftedStop - 1f) % 1f) + 1f) to color)
-            }
-        }.sortedBy { it.first }
-        return shifted.toTypedArray()
     }
 
     Canvas(modifier = modifier) {
@@ -517,35 +544,66 @@ private fun EdgeLightOverlay(
             EdgeLightMode.TIMER_ALERT -> 11.dp.toPx()
             EdgeLightMode.BREAK_REMINDER -> 10.dp.toPx()
             EdgeLightMode.STOPWATCH_ACTIVE -> 9.dp.toPx()
+            EdgeLightMode.AMBIENT_FOCUS -> 7.dp.toPx()
             EdgeLightMode.AMBIENT_PLAYFUL -> 8.dp.toPx()
             EdgeLightMode.AMBIENT_SERENE -> 6.dp.toPx()
-            EdgeLightMode.AMBIENT_NIGHT -> 5.dp.toPx()
+            EdgeLightMode.AMBIENT_NIGHT -> 4.dp.toPx()
             EdgeLightMode.NONE -> 0f
         }
         val glowStroke = when (mode) {
-            EdgeLightMode.AMBIENT_NIGHT -> outerStroke * 1.9f
-            EdgeLightMode.AMBIENT_SERENE -> outerStroke * 2.1f
+            EdgeLightMode.AMBIENT_NIGHT -> outerStroke * 2.8f
+            EdgeLightMode.AMBIENT_SERENE -> outerStroke * 2.4f
+            EdgeLightMode.AMBIENT_FOCUS -> outerStroke * 2.2f
             else -> outerStroke * 2.6f
         }
         val coreStroke = outerStroke * 0.26f
         val haloStroke = outerStroke * 1.4f
+        val bloomStroke = when (mode) {
+            EdgeLightMode.TIMER_ALERT, EdgeLightMode.BREAK_REMINDER -> outerStroke * 6f
+            EdgeLightMode.STOPWATCH_ACTIVE -> outerStroke * 5f
+            else -> outerStroke * 8f
+        }
         val cornerRadiusPx = 42.dp.toPx()
         val corner = CornerRadius(cornerRadiusPx, cornerRadiusPx)
         val rectTopLeft = Offset(inset, inset)
         val rectSize = Size(size.width - inset * 2f, size.height - inset * 2f)
         val glowBrush = Brush.sweepGradient(
-            colorStops = shiftedStops(palette, if (mode == EdgeLightMode.AMBIENT_NIGHT) 0.24f else 0.36f),
+            colorStops = shiftedStops(palette, when (mode) {
+                EdgeLightMode.AMBIENT_NIGHT -> 0.20f
+                EdgeLightMode.AMBIENT_SERENE -> 0.30f
+                EdgeLightMode.AMBIENT_FOCUS -> 0.32f
+                else -> 0.36f
+            }),
             center = center
         )
         val edgeBrush = Brush.sweepGradient(
             colorStops = shiftedStops(palette, when (mode) {
-                EdgeLightMode.AMBIENT_SERENE -> 0.72f
-                EdgeLightMode.AMBIENT_NIGHT -> 0.58f
+                EdgeLightMode.AMBIENT_SERENE -> 0.68f
+                EdgeLightMode.AMBIENT_NIGHT -> 0.50f
+                EdgeLightMode.AMBIENT_FOCUS -> 0.80f
                 else -> 0.96f
             }),
             center = center
         )
+        // Wide low-alpha stroke: inner half produces a backlit screen-bloom effect.
+        val bloomBrush = Brush.sweepGradient(
+            colorStops = shiftedStops(palette, when (mode) {
+                EdgeLightMode.AMBIENT_NIGHT -> 0.04f
+                EdgeLightMode.AMBIENT_SERENE -> 0.06f
+                EdgeLightMode.AMBIENT_FOCUS -> 0.06f
+                EdgeLightMode.AMBIENT_PLAYFUL -> 0.09f
+                else -> 0.14f
+            }),
+            center = center
+        )
 
+        drawRoundRect(
+            brush = bloomBrush,
+            topLeft = rectTopLeft,
+            size = rectSize,
+            cornerRadius = corner,
+            style = Stroke(width = bloomStroke)
+        )
         drawRoundRect(
             brush = glowBrush,
             topLeft = rectTopLeft,
@@ -569,8 +627,9 @@ private fun EdgeLightOverlay(
         )
         drawRoundRect(
             color = Color.White.copy(alpha = safeAlpha(when (mode) {
-                EdgeLightMode.AMBIENT_SERENE -> 0.22f * overlayAlpha * pulse
-                EdgeLightMode.AMBIENT_NIGHT -> 0.14f * overlayAlpha * pulse
+                EdgeLightMode.AMBIENT_SERENE -> 0.18f * overlayAlpha * pulse
+                EdgeLightMode.AMBIENT_NIGHT -> 0.10f * overlayAlpha * pulse
+                EdgeLightMode.AMBIENT_FOCUS -> 0.28f * overlayAlpha * pulse
                 else -> 0.38f * overlayAlpha * pulse
             })),
             topLeft = rectTopLeft,
@@ -581,7 +640,8 @@ private fun EdgeLightOverlay(
         drawRoundRect(
             color = Color.White.copy(alpha = safeAlpha(when (mode) {
                 EdgeLightMode.AMBIENT_SERENE -> 0.06f * overlayAlpha
-                EdgeLightMode.AMBIENT_NIGHT -> 0.04f * overlayAlpha
+                EdgeLightMode.AMBIENT_NIGHT -> 0.03f * overlayAlpha
+                EdgeLightMode.AMBIENT_FOCUS -> 0.10f * overlayAlpha
                 else -> 0.12f * overlayAlpha
             })),
             topLeft = rectTopLeft,
@@ -885,6 +945,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawWeatherBackdrop
 
     val horizonAlpha = when (weather) {
         ParticleWeather.SUNNY -> 0.15f
+        ParticleWeather.CLOUDY -> 0.09f
         ParticleWeather.FOG -> 0.25f
         ParticleWeather.SNOW, ParticleWeather.BLIZZARD -> 0.20f
         else -> 0.12f
@@ -941,14 +1002,17 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawAtmosphereBlobs
         val height = size.height * blob.heightFactor
         val cloudAlpha = blob.alpha * when (weather) {
             ParticleWeather.SUNNY -> 0.9f
-            ParticleWeather.CLOUDY, ParticleWeather.FOG -> 1.2f
+            ParticleWeather.CLOUDY, ParticleWeather.FOG -> 1.05f
             else -> 1.0f
         }
-        drawCloudCluster(
-            center = Offset(x, y),
-            size = Size(width, height),
-            color = palette.cloud.copy(alpha = cloudAlpha)
-        )
+        // Draw wrapped copies on both sides to avoid visible popping when x wraps from right edge back to left.
+        listOf(-size.width, 0f, size.width).forEach { shift ->
+            drawCloudCluster(
+                center = Offset(x + shift, y),
+                size = Size(width, height),
+                color = palette.cloud.copy(alpha = cloudAlpha)
+            )
+        }
     }
 }
 
@@ -1001,22 +1065,24 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawFogVeils(
         val drift = ((seconds * (0.012f + index * 0.005f)) + index * 0.13f).wrap(1f) * size.width
         val alpha = when (weather) {
             ParticleWeather.FOG -> 0.12f
-            ParticleWeather.CLOUDY -> 0.07f
+            ParticleWeather.CLOUDY -> 0.045f
             else -> 0.09f
         } + sin(seconds * 0.18f + index).coerceIn(-1f, 1f) * 0.01f
-        drawRoundRect(
-            brush = Brush.horizontalGradient(
-                colors = listOf(
-                    Color.Transparent,
-                    palette.fog.copy(alpha = alpha),
-                    palette.fog.copy(alpha = alpha * 0.7f),
-                    Color.Transparent
-                )
-            ),
-            topLeft = Offset(drift - size.width * 0.55f, y),
-            size = Size(size.width * 1.10f, size.height * 0.09f),
-            cornerRadius = CornerRadius(size.height * 0.05f, size.height * 0.05f)
-        )
+        listOf(-size.width, 0f, size.width).forEach { shift ->
+            drawRoundRect(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(
+                        Color.Transparent,
+                        palette.fog.copy(alpha = alpha),
+                        palette.fog.copy(alpha = alpha * 0.7f),
+                        Color.Transparent
+                    )
+                ),
+                topLeft = Offset(drift + shift - size.width * 0.55f, y),
+                size = Size(size.width * 1.10f, size.height * 0.09f),
+                cornerRadius = CornerRadius(size.height * 0.05f, size.height * 0.05f)
+            )
+        }
     }
 }
 
@@ -1189,35 +1255,48 @@ private fun LiquidGlassSurface(
         modifier = modifier
             .clip(shape)
             .background(
-                brush = Brush.linearGradient(
+                brush = Brush.verticalGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = 0.24f),
-                        LiquidGlassTint.copy(alpha = 0.16f),
-                        LiquidGlassCool.copy(alpha = 0.10f)
+                        Color.White.copy(alpha = 0.18f),
+                        LiquidGlassTint.copy(alpha = 0.10f),
+                        LiquidGlassCool.copy(alpha = 0.06f),
+                        Color.White.copy(alpha = 0.04f)
                     )
                 ),
                 shape = shape
             )
             .border(
-                width = 1.dp,
-                brush = Brush.linearGradient(
+                width = 0.5.dp,
+                brush = Brush.verticalGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = 0.56f),
-                        Color.White.copy(alpha = 0.18f),
-                        LiquidGlassCool.copy(alpha = 0.16f)
+                        Color.White.copy(alpha = 0.48f),
+                        Color.White.copy(alpha = 0.12f),
+                        LiquidGlassCool.copy(alpha = 0.10f),
+                        Color.White.copy(alpha = 0.06f)
                     )
                 ),
                 shape = shape
             )
             .drawWithContent {
                 drawContent()
+                // Top specular highlight.
                 drawRect(
                     brush = Brush.verticalGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = highlightAlpha),
+                            Color.White.copy(alpha = highlightAlpha * 0.8f),
+                            Color.Transparent
+                        ),
+                        endY = size.height * 0.38f
+                    )
+                )
+                // Bottom inner shadow.
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
                             Color.Transparent,
-                            LiquidGlassShadow.copy(alpha = 0.10f)
-                        )
+                            LiquidGlassShadow.copy(alpha = 0.08f)
+                        ),
+                        startY = size.height * 0.65f
                     )
                 )
             }
@@ -1291,16 +1370,21 @@ private fun SettingsPanelSurface(
             .background(
                 brush = Brush.verticalGradient(
                     colors = listOf(
-                        Color(0xFF273240).copy(alpha = 0.95f),
-                        Color(0xFF1A2330).copy(alpha = 0.97f),
-                        Color(0xFF101823).copy(alpha = 0.985f)
+                        Color(0xFF1E2A38).copy(alpha = 0.93f),
+                        Color(0xFF151E2B).copy(alpha = 0.96f),
+                        Color(0xFF0D1520).copy(alpha = 0.98f)
                     )
                 ),
                 shape = shape
             )
             .border(
-                width = 1.dp,
-                color = Color.White.copy(alpha = 0.16f),
+                width = 0.5.dp,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.20f),
+                        Color.White.copy(alpha = 0.06f)
+                    )
+                ),
                 shape = shape
             )
             .drawWithContent {
@@ -1308,9 +1392,10 @@ private fun SettingsPanelSurface(
                 drawRect(
                     brush = Brush.verticalGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = 0.06f),
+                            Color.White.copy(alpha = 0.05f),
                             Color.Transparent,
-                            Color.Black.copy(alpha = 0.08f)
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.10f)
                         )
                     )
                 )
@@ -1331,12 +1416,22 @@ private fun SettingsCardSurface(
         modifier = modifier
             .clip(shape)
             .background(
-                color = Color(0xFF1A2431).copy(alpha = 0.96f),
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color(0xFF1C2734).copy(alpha = 0.92f),
+                        Color(0xFF141D29).copy(alpha = 0.95f)
+                    )
+                ),
                 shape = shape
             )
             .border(
-                width = 1.dp,
-                color = Color.White.copy(alpha = 0.14f),
+                width = 0.5.dp,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.16f),
+                        Color.White.copy(alpha = 0.04f)
+                    )
+                ),
                 shape = shape
             )
             .drawWithContent {
@@ -1344,7 +1439,7 @@ private fun SettingsCardSurface(
                 drawRect(
                     brush = Brush.verticalGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = 0.05f),
+                            Color.White.copy(alpha = 0.04f),
                             Color.Transparent,
                             Color.Black.copy(alpha = 0.06f)
                         )
@@ -2651,7 +2746,7 @@ private fun MainTimeDisplay(
     val display = remember(state) { state.timerDisplay() }
     BoxWithConstraints(modifier = modifier) {
         val availableWidth = maxWidth.value
-        val widthFactor = (if (display.amPm.isNotBlank()) 5.35f else if (showSeconds) 4.95f else 4.18f) * state.selectedFont.widthFitMultiplier
+        val widthFactor = (if (showSeconds) 4.95f else 4.18f) * state.selectedFont.widthFitMultiplier
         val fittedBaseSize = ((availableWidth - 12f) / widthFactor).coerceAtLeast(34f)
         val resolvedBaseSize = minOf(baseSize, fittedBaseSize)
         val secondsScale = state.selectedFont.secondsScale
@@ -2660,33 +2755,17 @@ private fun MainTimeDisplay(
             FlipDigit(display.hour, state.selectedFont, resolvedBaseSize)
             Text(":", color = LiquidGlassText.copy(alpha = 0.84f), fontSize = (resolvedBaseSize * 0.78f).sp, fontWeight = FontWeight.Light)
             FlipDigit(display.minute, state.selectedFont, resolvedBaseSize)
-            if (showSeconds || display.amPm.isNotBlank()) {
+            if (showSeconds) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(if (display.amPm.isNotBlank()) 18.dp else 10.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    if (display.amPm.isNotBlank()) {
-                        LiquidGlassSurface(
-                            shape = RoundedCornerShape(20.dp),
-                            padding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                            highlightAlpha = 0.16f
-                        ) {
-                            Text(
-                                display.amPm,
-                                color = LiquidGlassText.copy(alpha = 0.7f),
-                                fontSize = (resolvedBaseSize * 0.28f).sp,
-                                fontFamily = UiFontFamily
-                            )
-                        }
-                    }
-                    if (showSeconds) {
-                        FlipDigit(
-                            display.second,
-                            state.selectedFont,
-                            (if (display.amPm.isNotBlank()) resolvedBaseSize * 0.23f else resolvedBaseSize * 0.28f) * secondsScale,
-                            compact = true
-                        )
-                    }
+                    FlipDigit(
+                        display.second,
+                        state.selectedFont,
+                        (resolvedBaseSize * 0.28f) * secondsScale,
+                        compact = true
+                    )
                 }
             }
         }
@@ -2730,8 +2809,10 @@ fun FlipDigit(value: String, font: ClockFont, fontSize: Float, compact: Boolean 
 
     val topRotation = if (progress.value < 0.5f) -180f * progress.value else -90f
     val bottomRotation = if (progress.value > 0.5f) 90f - ((progress.value - 0.5f) * 180f) else 90f
+    // Strict sequential: top stays with outgoing during top flip, then switches to current
     val staticTopValue = if (progress.value < 0.5f) outgoingValue else currentValue
-    val staticBottomValue = if (progress.value < 0.5f) outgoingValue else currentValue
+    // Bottom stays with outgoing until bottom flip starts
+    val staticBottomValue = outgoingValue
     val topPhase = (progress.value / 0.5f).coerceIn(0f, 1f)
     val bottomPhase = ((progress.value - 0.5f) / 0.5f).coerceIn(0f, 1f)
     val hingePulse = (1f - (kotlin.math.abs(progress.value - 0.5f) / 0.5f)).coerceIn(0f, 1f)
@@ -2865,7 +2946,7 @@ private fun FlipDigitHalf(
             bottomEnd = if (compact) 18.dp else 28.dp
         )
     }
-    val baseTint = if (isTop) Color.White.copy(alpha = 0.22f) else LiquidGlassCool.copy(alpha = 0.14f)
+    val baseTint = if (isTop) Color.White.copy(alpha = 0.18f) else LiquidGlassCool.copy(alpha = 0.11f)
     val textMeasurer = rememberTextMeasurer()
     val textStyle = TextStyle(
         fontSize = fontSize.sp,
@@ -2882,9 +2963,9 @@ private fun FlipDigitHalf(
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        Color.White.copy(alpha = if (isTop) 0.20f else 0.14f),
-                        LiquidGlassTint.copy(alpha = 0.14f),
-                        LiquidGlassShadow.copy(alpha = if (elevated) 0.18f else 0.12f)
+                        Color.White.copy(alpha = if (isTop) 0.17f else 0.11f),
+                        LiquidGlassTint.copy(alpha = 0.11f),
+                        LiquidGlassShadow.copy(alpha = if (elevated) 0.24f else 0.17f)
                     )
                 )
             )
@@ -2892,7 +2973,7 @@ private fun FlipDigitHalf(
                 1.dp,
                 Brush.verticalGradient(
                     listOf(
-                        Color.White.copy(alpha = 0.55f),
+                        Color.White.copy(alpha = 0.40f),
                         Color.White.copy(alpha = 0.16f)
                     )
                 ),
@@ -3058,9 +3139,10 @@ private fun ClockState.timerDisplay(): TimerDisplay {
     }
 }
 
+@Composable
 private fun ClockState.modeHeadline(): String {
     return when (clockMode) {
-        ClockMode.CLOCK -> "${activeThemePreset.name.lowercase().replaceFirstChar { it.titlecase() }} preset"
+        ClockMode.CLOCK -> activeThemePreset.label()
         ClockMode.POMODORO -> if (pomodoroPhase == PomodoroPhase.FOCUS) "Focus session" else "Break session"
         ClockMode.COUNTDOWN -> "Countdown target ${countdownDurationMinutes} min"
         ClockMode.STOPWATCH -> "Track live focus time"
