@@ -14,6 +14,11 @@ enum class PomodoroPhase {
     BREAK
 }
 
+enum class SleepSoundMode {
+    RAIN,
+    WHITE_NOISE
+}
+
 enum class ThemePreset {
     AUTO,
     FOCUS,

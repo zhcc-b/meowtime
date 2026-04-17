@@ -62,6 +62,7 @@ import com.example.mytime.ui.ClockState
 import com.example.mytime.ui.EdgeLightMode
 import com.example.mytime.ui.ParticleWeather
 import com.example.mytime.ui.PomodoroPhase
+import com.example.mytime.ui.SleepSoundMode
 import com.example.mytime.ui.ThemePreset
 import com.example.mytime.ui.UiFontFamily
 import com.example.mytime.ui.profile
@@ -101,6 +102,7 @@ fun FlipClockScreen(
     onToggleBreakReminder: (Boolean) -> Unit,
     onSetThemePreset: (ThemePreset) -> Unit,
     onToggleThemeEdgeLight: (Boolean) -> Unit,
+    onSelectSleepSound: (SleepSoundMode) -> Unit,
     onToggleWhiteNoise: (Boolean) -> Unit
 ) {
     val currentFont = state.selectedFont.family
@@ -243,6 +245,7 @@ fun FlipClockScreen(
                 )
             },
             onToggleThemeEdgeLight = onToggleThemeEdgeLight,
+            onSelectSleepSound = onSelectSleepSound,
             onToggleWhiteNoise = onToggleWhiteNoise
         )
 
@@ -1503,6 +1506,7 @@ private fun SettingsMenu(
     onToggleBreakReminder: (Boolean) -> Unit,
     onSetThemePreset: (ThemePreset) -> Unit,
     onToggleThemeEdgeLight: (Boolean) -> Unit,
+    onSelectSleepSound: (SleepSoundMode) -> Unit,
     onToggleWhiteNoise: (Boolean) -> Unit
 ) {
     if (visible) {
@@ -1558,7 +1562,13 @@ private fun SettingsMenu(
                         SettingToggle(stringResource(id = R.string.settings_wallpaper), state.isDynamicWallpaperEnabled, onToggleDynamicWallpaper)
                         SettingToggle(stringResource(id = R.string.settings_burnin), state.isBurnInProtectionEnabled, onToggleBurnIn)
                         SettingToggle(stringResource(id = R.string.settings_24_hour), state.is24HourFormat, onToggle24HourFormat)
-                        SettingToggle(stringResource(id = R.string.settings_white_noise), state.whiteNoiseEnabled, onToggleWhiteNoise)
+                        SleepSoundSelector(
+                            selected = state.sleepSoundMode,
+                            enabled = state.whiteNoiseEnabled,
+                            remainingSeconds = state.sleepSoundRemainingSeconds,
+                            onEnabledChange = onToggleWhiteNoise,
+                            onSelect = onSelectSleepSound
+                        )
                         HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
                         SettingToggle(stringResource(id = R.string.settings_sound_button), state.isSoundButtonVisible, onToggleSound)
                         ThemePresetSelector(
@@ -1666,6 +1676,78 @@ private fun ParticleWeatherSelector(
                             text = weather.label(),
                             color = if (isSelected) LiquidGlassText else LiquidGlassText.copy(alpha = 0.62f),
                             fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SleepSoundSelector(
+    selected: SleepSoundMode,
+    enabled: Boolean,
+    remainingSeconds: Int,
+    onEnabledChange: (Boolean) -> Unit,
+    onSelect: (SleepSoundMode) -> Unit
+) {
+    SettingsCardSurface(
+        shape = RoundedCornerShape(24.dp),
+        padding = PaddingValues(16.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    stringResource(id = R.string.settings_sleep_sound_type),
+                    color = LiquidGlassText.copy(alpha = 0.88f),
+                    fontSize = 16.sp
+                )
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = onEnabledChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Color(0xFFB7E2FF),
+                        uncheckedThumbColor = Color.White.copy(alpha = 0.92f),
+                        uncheckedTrackColor = Color.White.copy(alpha = 0.22f),
+                        uncheckedBorderColor = Color.Transparent,
+                        checkedBorderColor = Color.Transparent
+                    )
+                )
+            }
+            Text(
+                text = if (enabled && remainingSeconds > 0) {
+                    stringResource(id = R.string.settings_sleep_sound_remaining, formatSleepSoundRemaining(remainingSeconds))
+                } else {
+                    stringResource(id = R.string.settings_sleep_sound_hint)
+                },
+                color = LiquidGlassText.copy(alpha = 0.52f),
+                fontSize = 11.sp,
+                fontFamily = UiFontFamily
+            )
+            Text(
+                text = stringResource(id = R.string.settings_sleep_sound_auto_off),
+                color = LiquidGlassText.copy(alpha = 0.42f),
+                fontSize = 10.sp,
+                fontFamily = UiFontFamily
+            )
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(SleepSoundMode.entries.toList()) { mode ->
+                    val isSelected = mode == selected
+                    SettingsChip(
+                        selected = isSelected,
+                        onClick = { onSelect(mode) }
+                    ) {
+                        Text(
+                            text = mode.label(),
+                            color = if (isSelected) LiquidGlassText else LiquidGlassText.copy(alpha = 0.62f),
+                            fontSize = 12.sp,
+                            fontFamily = UiFontFamily
                         )
                     }
                 }
@@ -3116,6 +3198,26 @@ private fun ClockMode.label(): String {
         ClockMode.POMODORO -> stringResource(id = R.string.mode_pomodoro)
         ClockMode.COUNTDOWN -> stringResource(id = R.string.mode_countdown)
         ClockMode.STOPWATCH -> stringResource(id = R.string.mode_stopwatch)
+    }
+}
+
+@Composable
+private fun SleepSoundMode.label(): String {
+    return when (this) {
+        SleepSoundMode.RAIN -> stringResource(id = R.string.sleep_sound_rain)
+        SleepSoundMode.WHITE_NOISE -> stringResource(id = R.string.sleep_sound_white_noise)
+    }
+}
+
+private fun formatSleepSoundRemaining(totalSeconds: Int): String {
+    val safe = totalSeconds.coerceAtLeast(0)
+    val hours = safe / 3600
+    val minutes = (safe % 3600) / 60
+    val seconds = safe % 60
+    return if (hours > 0) {
+        "%d:%02d:%02d".format(hours, minutes, seconds)
+    } else {
+        "%02d:%02d".format(minutes, seconds)
     }
 }
 

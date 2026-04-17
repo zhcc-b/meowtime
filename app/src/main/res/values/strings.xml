@@ -11,7 +11,15 @@
     <string name="settings_burnin">Burn-in Protection</string>
     <string name="settings_24_hour">24-Hour Format</string>
     <string name="settings_sound_button">Sound Button</string>
-    <string name="settings_white_noise">White Noise</string>
+    <string name="settings_white_noise">Sleep Sound</string>
+    <string name="settings_sleep_sound">Sleep Sound</string>
+    <string name="settings_sleep_sound_with_timer">Sleep Sound · %1$s</string>
+    <string name="settings_sleep_sound_type">Sleep Sound Type</string>
+    <string name="settings_sleep_sound_remaining">Off in %1$s</string>
+    <string name="settings_sleep_sound_hint">Choose a sleep sound and tap the switch to start.</string>
+    <string name="settings_sleep_sound_auto_off">Automatically stops after 1 hour.</string>
+    <string name="sleep_sound_rain">Rain</string>
+    <string name="sleep_sound_white_noise">White Noise</string>
     <string name="settings_hourly_chime">Hourly Chime</string>
     <string name="settings_daily_alarm">Daily Alarm</string>
     <string name="settings_alarm_time">Alarm Time</string>

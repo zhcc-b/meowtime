@@ -77,6 +77,7 @@ private object PreferenceKeys {
     val breakReminder = booleanPreferencesKey("break_reminder")
     val themePreset = stringPreferencesKey("theme_preset")
     val themeEdgeLight = booleanPreferencesKey("theme_edge_light")
+    val sleepSoundMode = stringPreferencesKey("sleep_sound_mode")
     val whiteNoise = booleanPreferencesKey("white_noise")
 }
 
@@ -109,6 +110,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private var locationJob: Job? = null
     private var tickerJob: Job? = null
     private var edgeLightJob: Job? = null
+    private var sleepSoundJob: Job? = null
+    private var sleepSoundEndsAtElapsedMs: Long = 0L
     private var sensorRegistered = false
     private var isAppActive = false
     private var lastHourlyChimeMarker = ""
@@ -150,6 +153,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                     val persistedPomodoroFocus = preferences[PreferenceKeys.pomodoroFocusMinutes] ?: state.pomodoroFocusMinutes
                     val persistedPomodoroBreak = preferences[PreferenceKeys.pomodoroBreakMinutes] ?: state.pomodoroBreakMinutes
                     val persistedCountdown = preferences[PreferenceKeys.countdownDurationMinutes] ?: state.countdownDurationMinutes
+                    val sleepMode = runCatching { SleepSoundMode.valueOf(preferences[PreferenceKeys.sleepSoundMode] ?: SleepSoundMode.RAIN.name) }
+                        .getOrDefault(SleepSoundMode.RAIN)
                     state.copy(
                         isBurnInProtectionEnabled = preferences[PreferenceKeys.burnIn] ?: state.isBurnInProtectionEnabled,
                         isSoundButtonVisible = preferences[PreferenceKeys.soundButton] ?: state.isSoundButtonVisible,
@@ -182,13 +187,19 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         breakReminderEnabled = preferences[PreferenceKeys.breakReminder] ?: state.breakReminderEnabled,
                         selectedThemePreset = preset,
                         isThemeEdgeLightEnabled = preferences[PreferenceKeys.themeEdgeLight] ?: state.isThemeEdgeLightEnabled,
+                        sleepSoundMode = sleepMode,
                         whiteNoiseEnabled = preferences[PreferenceKeys.whiteNoise] ?: state.whiteNoiseEnabled
                     )
                 }
-                if (_uiState.value.whiteNoiseEnabled) {
-                    whiteNoisePlayer.start()
+                val soundState = _uiState.value
+                if (soundState.whiteNoiseEnabled) {
+                    if (sleepSoundEndsAtElapsedMs == 0L) {
+                        sleepSoundEndsAtElapsedMs = SystemClock.elapsedRealtime() + SLEEP_SOUND_DURATION_MS
+                    }
+                    whiteNoisePlayer.start(soundState.sleepSoundMode)
+                    startSleepSoundCountdown()
                 } else {
-                    whiteNoisePlayer.stop()
+                    stopSleepSound(clearPersistedState = false)
                 }
             }
         }
@@ -1000,9 +1011,57 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     }
 
     fun toggleWhiteNoise(enabled: Boolean) {
-        _uiState.update { it.copy(whiteNoiseEnabled = enabled) }
-        if (enabled) whiteNoisePlayer.start() else whiteNoisePlayer.stop()
+        if (enabled) {
+            sleepSoundEndsAtElapsedMs = SystemClock.elapsedRealtime() + SLEEP_SOUND_DURATION_MS
+            _uiState.update {
+                it.copy(
+                    whiteNoiseEnabled = true,
+                    sleepSoundRemainingSeconds = (SLEEP_SOUND_DURATION_MS / 1000L).toInt()
+                )
+            }
+            whiteNoisePlayer.start(_uiState.value.sleepSoundMode)
+            startSleepSoundCountdown()
+        } else {
+            stopSleepSound(clearPersistedState = true)
+        }
         persistSetting { this[PreferenceKeys.whiteNoise] = enabled }
+    }
+
+    fun setSleepSoundMode(mode: SleepSoundMode) {
+        _uiState.update { it.copy(sleepSoundMode = mode) }
+        if (_uiState.value.whiteNoiseEnabled) {
+            whiteNoisePlayer.start(mode)
+        }
+        persistSetting { this[PreferenceKeys.sleepSoundMode] = mode.name }
+    }
+
+    private fun startSleepSoundCountdown() {
+        if (sleepSoundJob?.isActive == true) return
+        sleepSoundJob = viewModelScope.launch {
+            while (isActive && _uiState.value.whiteNoiseEnabled) {
+                val remaining = ((sleepSoundEndsAtElapsedMs - SystemClock.elapsedRealtime()) / 1000L)
+                    .toInt()
+                    .coerceAtLeast(0)
+                _uiState.update { it.copy(sleepSoundRemainingSeconds = remaining) }
+                if (remaining <= 0) {
+                    stopSleepSound(clearPersistedState = true)
+                    persistSetting { this[PreferenceKeys.whiteNoise] = false }
+                    break
+                }
+                delay(1_000L)
+            }
+        }
+    }
+
+    private fun stopSleepSound(clearPersistedState: Boolean) {
+        sleepSoundJob?.cancel()
+        sleepSoundJob = null
+        sleepSoundEndsAtElapsedMs = 0L
+        whiteNoisePlayer.stop()
+        _uiState.update { it.copy(whiteNoiseEnabled = false, sleepSoundRemainingSeconds = 0) }
+        if (clearPersistedState) {
+            persistSetting { this[PreferenceKeys.whiteNoise] = false }
+        }
     }
 
     fun setAppActive(active: Boolean) {
@@ -1098,6 +1157,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
 
     override fun onCleared() {
         edgeLightJob?.cancel()
+        sleepSoundJob?.cancel()
         stopClockTicker()
         unregisterRotationSensor()
         runCatching { appContext.unregisterReceiver(batteryReceiver) }
@@ -1110,6 +1170,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         super.onCleared()
     }
 }
+
+private const val SLEEP_SOUND_DURATION_MS = 60L * 60L * 1000L
 
 private fun Offset.sanitize(): Offset = Offset(
     x = x.takeIf { it.isFinite() } ?: 0f,

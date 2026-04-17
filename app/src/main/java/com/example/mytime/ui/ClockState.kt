@@ -64,6 +64,8 @@ data class ClockState(
     val activeThemePreset: ThemePreset = ThemePreset.SERENE,
     val isThemeEdgeLightEnabled: Boolean = true,
     val whiteNoiseEnabled: Boolean = false,
+    val sleepSoundMode: SleepSoundMode = SleepSoundMode.RAIN,
+    val sleepSoundRemainingSeconds: Int = 0,
     val edgeLightMode: EdgeLightMode = EdgeLightMode.NONE,
 
     // 视差位移 (由陀螺仪控制)

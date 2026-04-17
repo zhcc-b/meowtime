@@ -32,6 +32,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.mytime.ui.ClockViewModel
 import com.example.mytime.ui.ClockMode
 import com.example.mytime.ui.ParticleWeather
+import com.example.mytime.ui.SleepSoundMode
 import com.example.mytime.ui.ThemePreset
 import com.example.mytime.ui.theme.FlipClockScreen
 import com.example.mytime.ui.theme.MytimeTheme
@@ -176,6 +177,7 @@ class MainActivity : ComponentActivity() {
                         onToggleBreakReminder = { viewModel.toggleBreakReminder(it) },
                         onSetThemePreset = { preset: ThemePreset -> viewModel.setThemePreset(preset) },
                         onToggleThemeEdgeLight = { viewModel.toggleThemeEdgeLight(it) },
+                        onSelectSleepSound = { mode: SleepSoundMode -> viewModel.setSleepSoundMode(mode) },
                         onToggleWhiteNoise = { viewModel.toggleWhiteNoise(it) }
                     )
                 }

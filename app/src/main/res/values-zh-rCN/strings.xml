@@ -11,7 +11,15 @@
     <string name="settings_burnin">防烧屏</string>
     <string name="settings_24_hour">24 小时制</string>
     <string name="settings_sound_button">声音按钮</string>
-    <string name="settings_white_noise">白噪音</string>
+    <string name="settings_white_noise">睡眠声音</string>
+    <string name="settings_sleep_sound">睡眠声音</string>
+    <string name="settings_sleep_sound_with_timer">睡眠声音 · %1$s</string>
+    <string name="settings_sleep_sound_type">睡眠声音类型</string>
+    <string name="settings_sleep_sound_remaining">%1$s 后关闭</string>
+    <string name="settings_sleep_sound_hint">选择一种睡眠声音，打开右侧开关即可播放。</string>
+    <string name="settings_sleep_sound_auto_off">默认 1 小时后自动关闭。</string>
+    <string name="sleep_sound_rain">雨声</string>
+    <string name="sleep_sound_white_noise">白噪音</string>
     <string name="settings_hourly_chime">整点报时</string>
     <string name="settings_daily_alarm">每日闹钟</string>
     <string name="settings_alarm_time">闹钟时间</string>
