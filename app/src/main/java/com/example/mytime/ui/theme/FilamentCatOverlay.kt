@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.mytime.ui.ParticleWeather
+import com.example.mytime.ui.ThemePreset
 import com.google.android.filament.Camera
 import com.google.android.filament.Engine
 import com.google.android.filament.EntityManager
@@ -52,6 +53,7 @@ import kotlin.random.Random
 fun FilamentCatOverlay(
     enabled: Boolean,
     weather: ParticleWeather,
+    theme: ThemePreset,
     forbiddenRect: RectF,
     modifier: Modifier = Modifier
 ) {
@@ -61,12 +63,14 @@ fun FilamentCatOverlay(
             FilamentCatsOverlayView(context).apply {
                 setCatsEnabled(enabled)
                 setWeather(weather)
+                setTheme(theme)
                 setForbiddenRect(forbiddenRect)
             }
         },
         update = { view ->
             view.setCatsEnabled(enabled)
             view.setWeather(weather)
+            view.setTheme(theme)
             view.setForbiddenRect(forbiddenRect)
         }
     )
@@ -170,6 +174,10 @@ private class FilamentCatsOverlayView(context: Context) : FrameLayout(context) {
         renderer.setWeather(weather)
     }
 
+    fun setTheme(theme: ThemePreset) {
+        renderer.setTheme(theme)
+    }
+
     fun setCatsEnabled(enabled: Boolean) {
         isEnabledCats = enabled
         renderer.setCatsEnabled(enabled)
@@ -253,7 +261,10 @@ private class AccessibleTextureView(context: Context) : TextureView(context) {
     }
 }
 
-private enum class CatState { IDLE, WALKING, REACTING }
+// Personality driven by theme preset — controls idle/groom/doze probabilities and mid-walk pause chance.
+private enum class CatPersonality { CALM, ENERGETIC, NOCTURNAL, FOCUSED }
+
+private enum class CatState { IDLE, DOZING, GROOMING, STRETCHING, WALKING, PAUSED_WALK, REACTING }
 
 private data class CatBehaviorProfile(
     val walkDelayMinMs: Long,
@@ -307,12 +318,30 @@ private data class CatActor(
     var pendingWalk: Boolean = false,
     var pendingReact: Boolean = false,
     var pendingLookAtClock: Boolean = false,
-    var reactingLookAtClock: Boolean = false
+    var reactingLookAtClock: Boolean = false,
+    // Doze / groom / stretch state
+    var dozingDurationSec: Float = 0f,
+    var dozingTargetSec: Float = 0f,
+    var groomingDurationSec: Float = 0f,
+    var groomingTargetSec: Float = 0f,
+    var stretchingDurationSec: Float = 0f,
+    var stretchingTargetSec: Float = 0f,
+    var groomCooldownSec: Float = Random.nextFloat() * 30f + 20f,
+    // Mid-walk pause
+    var pausedWalkRemainSec: Float = 0f,
+    // Walk motion — all walk params computed once at walk start so motion is deterministic
+    var walkStartPx: PointF = PointF(),      // world position when this walk began
+    var walkT: Float = 0f,                   // normalized walk progress [0, 1] — drives position
+    var walkTotalTimeSec: Float = 0f,        // total walk duration = dist / speed
+    var walkDirYaw: Float = 0f,              // facing angle (deg) pre-computed from start→target
+    var pauseAtT: Float = -1f,              // walkT threshold at which to pause (−1 = no pause)
+    var pauseDurationSec: Float = 0f         // how long to stay paused
 )
 
 private class CatFilamentRenderer(private val context: Context) {
     private val lock = Any()
-    val targetFrameIntervalNs = AtomicLong(33_333_333L)
+    // Default to ~20fps to reduce battery use; adaptive logic can raise/lower it.
+    val targetFrameIntervalNs = AtomicLong(50_000_000L)
 
     private var engine: Engine? = null
     private var renderer: Renderer? = null
@@ -336,6 +365,7 @@ private class CatFilamentRenderer(private val context: Context) {
     private var orthoHalfHeight = 5.6f
     private var forbiddenRect = RectF()
     private var catsEnabled = true
+    private var personality = CatPersonality.CALM
     private var lastFrameNs = 0L
     private var weather: ParticleWeather = ParticleWeather.SNOW
 
@@ -344,112 +374,112 @@ private class CatFilamentRenderer(private val context: Context) {
     private fun behaviorProfile(): CatBehaviorProfile {
         return when (weather) {
             ParticleWeather.SUNNY -> CatBehaviorProfile(
-                walkDelayMinMs = 4_000L,
-                walkDelayMaxMs = 18_000L,
-                idleMinSec = 5f,
-                idleMaxSec = 18f,
-                walkSpeedPxPerSec = 175f,
-                reactMoveSpeedPxPerSec = 60f,
-                reactDurationSec = 1.0f,
-                walkBobAmp = 0.045f,
-                idleHeadTurnAmpDeg = 5f,
-                reactHeadTurnAmpDeg = 7f
+                walkDelayMinMs = 6_000L,
+                walkDelayMaxMs = 22_000L,
+                idleMinSec = 6f,
+                idleMaxSec = 20f,
+                walkSpeedPxPerSec = 110f,
+                reactMoveSpeedPxPerSec = 42f,
+                reactDurationSec = 1.2f,
+                walkBobAmp = 0.028f,
+                idleHeadTurnAmpDeg = 3f,
+                reactHeadTurnAmpDeg = 4f
             )
             ParticleWeather.CLOUDY -> CatBehaviorProfile(
-                walkDelayMinMs = 5_500L,
-                walkDelayMaxMs = 20_000L,
-                idleMinSec = 7f,
-                idleMaxSec = 20f,
-                walkSpeedPxPerSec = 155f,
-                reactMoveSpeedPxPerSec = 54f,
-                reactDurationSec = 1.05f,
-                walkBobAmp = 0.04f,
-                idleHeadTurnAmpDeg = 4f,
-                reactHeadTurnAmpDeg = 6f
-            )
-            ParticleWeather.FOG -> CatBehaviorProfile(
                 walkDelayMinMs = 7_000L,
                 walkDelayMaxMs = 24_000L,
                 idleMinSec = 8f,
-                idleMaxSec = 24f,
-                walkSpeedPxPerSec = 135f,
-                reactMoveSpeedPxPerSec = 48f,
-                reactDurationSec = 1.15f,
-                walkBobAmp = 0.035f,
-                idleHeadTurnAmpDeg = 4f,
-                reactHeadTurnAmpDeg = 5f
+                idleMaxSec = 22f,
+                walkSpeedPxPerSec = 95f,
+                reactMoveSpeedPxPerSec = 38f,
+                reactDurationSec = 1.3f,
+                walkBobAmp = 0.024f,
+                idleHeadTurnAmpDeg = 2.5f,
+                reactHeadTurnAmpDeg = 3.5f
+            )
+            ParticleWeather.FOG -> CatBehaviorProfile(
+                walkDelayMinMs = 9_000L,
+                walkDelayMaxMs = 30_000L,
+                idleMinSec = 10f,
+                idleMaxSec = 28f,
+                walkSpeedPxPerSec = 85f,
+                reactMoveSpeedPxPerSec = 34f,
+                reactDurationSec = 1.4f,
+                walkBobAmp = 0.020f,
+                idleHeadTurnAmpDeg = 2f,
+                reactHeadTurnAmpDeg = 3f
             )
             ParticleWeather.RAIN -> CatBehaviorProfile(
-                walkDelayMinMs = 2_000L,
-                walkDelayMaxMs = 14_000L,
-                idleMinSec = 3f,
-                idleMaxSec = 14f,
-                walkSpeedPxPerSec = 220f,
-                reactMoveSpeedPxPerSec = 70f,
-                reactDurationSec = 1.0f,
-                walkBobAmp = 0.055f,
-                idleHeadTurnAmpDeg = 3f,
-                reactHeadTurnAmpDeg = 7f
+                walkDelayMinMs = 5_000L,
+                walkDelayMaxMs = 18_000L,
+                idleMinSec = 5f,
+                idleMaxSec = 16f,
+                walkSpeedPxPerSec = 120f,
+                reactMoveSpeedPxPerSec = 46f,
+                reactDurationSec = 1.15f,
+                walkBobAmp = 0.032f,
+                idleHeadTurnAmpDeg = 2f,
+                reactHeadTurnAmpDeg = 4f
             )
             ParticleWeather.DRIZZLE -> CatBehaviorProfile(
-                walkDelayMinMs = 4_000L,
-                walkDelayMaxMs = 20_000L,
-                idleMinSec = 5f,
-                idleMaxSec = 20f,
-                walkSpeedPxPerSec = 185f,
-                reactMoveSpeedPxPerSec = 60f,
-                reactDurationSec = 1.0f,
-                walkBobAmp = 0.05f,
-                idleHeadTurnAmpDeg = 4f,
-                reactHeadTurnAmpDeg = 6f
+                walkDelayMinMs = 7_000L,
+                walkDelayMaxMs = 24_000L,
+                idleMinSec = 7f,
+                idleMaxSec = 22f,
+                walkSpeedPxPerSec = 100f,
+                reactMoveSpeedPxPerSec = 40f,
+                reactDurationSec = 1.25f,
+                walkBobAmp = 0.025f,
+                idleHeadTurnAmpDeg = 2.5f,
+                reactHeadTurnAmpDeg = 3.5f
             )
             ParticleWeather.SNOW -> CatBehaviorProfile(
-                walkDelayMinMs = 8_000L,
-                walkDelayMaxMs = 36_000L,
-                idleMinSec = 10f,
-                idleMaxSec = 32f,
-                walkSpeedPxPerSec = 125f,
-                reactMoveSpeedPxPerSec = 45f,
-                reactDurationSec = 1.2f,
-                walkBobAmp = 0.035f,
-                idleHeadTurnAmpDeg = 5f,
-                reactHeadTurnAmpDeg = 6f
+                walkDelayMinMs = 10_000L,
+                walkDelayMaxMs = 40_000L,
+                idleMinSec = 12f,
+                idleMaxSec = 36f,
+                walkSpeedPxPerSec = 75f,
+                reactMoveSpeedPxPerSec = 30f,
+                reactDurationSec = 1.5f,
+                walkBobAmp = 0.018f,
+                idleHeadTurnAmpDeg = 2f,
+                reactHeadTurnAmpDeg = 3f
             )
             ParticleWeather.BLIZZARD -> CatBehaviorProfile(
-                walkDelayMinMs = 10_000L,
-                walkDelayMaxMs = 45_000L,
-                idleMinSec = 14f,
-                idleMaxSec = 45f,
-                walkSpeedPxPerSec = 105f,
-                reactMoveSpeedPxPerSec = 38f,
-                reactDurationSec = 1.35f,
-                walkBobAmp = 0.03f,
-                idleHeadTurnAmpDeg = 6f,
-                reactHeadTurnAmpDeg = 5f
+                walkDelayMinMs = 14_000L,
+                walkDelayMaxMs = 50_000L,
+                idleMinSec = 16f,
+                idleMaxSec = 50f,
+                walkSpeedPxPerSec = 60f,
+                reactMoveSpeedPxPerSec = 24f,
+                reactDurationSec = 1.6f,
+                walkBobAmp = 0.014f,
+                idleHeadTurnAmpDeg = 1.5f,
+                reactHeadTurnAmpDeg = 2.5f
             )
             ParticleWeather.HAIL -> CatBehaviorProfile(
-                walkDelayMinMs = 1_500L,
-                walkDelayMaxMs = 9_000L,
-                idleMinSec = 2f,
-                idleMaxSec = 10f,
-                walkSpeedPxPerSec = 260f,
-                reactMoveSpeedPxPerSec = 78f,
-                reactDurationSec = 0.9f,
-                walkBobAmp = 0.065f,
-                idleHeadTurnAmpDeg = 3f,
-                reactHeadTurnAmpDeg = 8f
+                walkDelayMinMs = 4_000L,
+                walkDelayMaxMs = 14_000L,
+                idleMinSec = 4f,
+                idleMaxSec = 14f,
+                walkSpeedPxPerSec = 135f,
+                reactMoveSpeedPxPerSec = 50f,
+                reactDurationSec = 1.1f,
+                walkBobAmp = 0.035f,
+                idleHeadTurnAmpDeg = 2f,
+                reactHeadTurnAmpDeg = 5f
             )
             ParticleWeather.WIND -> CatBehaviorProfile(
-                walkDelayMinMs = 2_000L,
-                walkDelayMaxMs = 11_000L,
-                idleMinSec = 3f,
-                idleMaxSec = 12f,
-                walkSpeedPxPerSec = 245f,
-                reactMoveSpeedPxPerSec = 72f,
-                reactDurationSec = 0.95f,
-                walkBobAmp = 0.06f,
-                idleHeadTurnAmpDeg = 7f,
-                reactHeadTurnAmpDeg = 9f
+                walkDelayMinMs = 5_000L,
+                walkDelayMaxMs = 16_000L,
+                idleMinSec = 4f,
+                idleMaxSec = 14f,
+                walkSpeedPxPerSec = 125f,
+                reactMoveSpeedPxPerSec = 48f,
+                reactDurationSec = 1.1f,
+                walkBobAmp = 0.030f,
+                idleHeadTurnAmpDeg = 3f,
+                reactHeadTurnAmpDeg = 5f
             )
         }
     }
@@ -469,6 +499,18 @@ private class CatFilamentRenderer(private val context: Context) {
                 if (cat.state == CatState.IDLE) {
                     cat.idleTargetDurationSec = randomIdleTargetSec()
                 }
+            }
+        }
+    }
+
+    fun setTheme(theme: ThemePreset) {
+        synchronized(lock) {
+            personality = when (theme) {
+                ThemePreset.PLAYFUL -> CatPersonality.ENERGETIC
+                ThemePreset.SERENE  -> CatPersonality.CALM
+                ThemePreset.NIGHT   -> CatPersonality.NOCTURNAL
+                ThemePreset.FOCUS   -> CatPersonality.FOCUSED
+                ThemePreset.AUTO    -> CatPersonality.CALM
             }
         }
     }
@@ -508,7 +550,7 @@ private class CatFilamentRenderer(private val context: Context) {
         lightEntity = EntityManager.get().create().also { light ->
             LightManager.Builder(LightManager.Type.DIRECTIONAL)
                 .color(1.0f, 0.98f, 0.95f)
-                .intensity(32_000f)
+                .intensity(18_000f)
                 .direction(0.5f, -1.0f, -0.8f)
                 .castShadows(false)
                 .build(eng, light)
@@ -756,97 +798,57 @@ private class CatFilamentRenderer(private val context: Context) {
         val timeCenter = PointF(forbiddenRect.centerX(), forbiddenRect.centerY())
 
         cats.forEach { cat ->
+            // ── Handle pending external triggers ──────────────────────────
             if (cat.pendingLookAtClock) {
                 cat.pendingLookAtClock = false
-                cat.previousState = cat.state
-                cat.state = CatState.REACTING
-                cat.stateElapsedSec = 0f
-                cat.reactingLookAtClock = true
-                cat.targetPx = PointF(timeCenter.x, cat.laneYPx)
+                if (cat.state == CatState.DOZING) {
+                    startStretching(cat)          // Wake a dozing cat before it looks at the clock
+                } else {
+                    cat.previousState = cat.state
+                    cat.state = CatState.REACTING
+                    cat.stateElapsedSec = 0f
+                    cat.reactingLookAtClock = true
+                    cat.targetPx = PointF(timeCenter.x, cat.laneYPx)
+                }
             } else if (cat.pendingReact) {
                 cat.pendingReact = false
-                cat.previousState = cat.state
-                cat.state = CatState.REACTING
-                cat.stateElapsedSec = 0f
-                cat.reactingLookAtClock = false
+                // Dozing / grooming cats are less responsive to minute-tick reactions
+                val ignoreChance = when (cat.state) {
+                    CatState.DOZING                             -> 0.75f
+                    CatState.GROOMING                           -> 0.50f
+                    CatState.WALKING, CatState.PAUSED_WALK      -> 0.30f
+                    else                                        -> 0f
+                }
+                if (Random.nextFloat() >= ignoreChance) {
+                    cat.previousState = cat.state
+                    cat.state = CatState.REACTING
+                    cat.stateElapsedSec = 0f
+                    cat.reactingLookAtClock = false
+                }
             } else if (cat.pendingWalk) {
                 cat.pendingWalk = false
-                cat.previousState = cat.state
-                cat.state = CatState.WALKING
-                cat.stateElapsedSec = 0f
-                cat.targetPx = generateWalkTarget(forbiddenRect, cat.positionPx, cat.laneYPx)
+                when (cat.state) {
+                    CatState.DOZING                              -> startStretching(cat)  // Must stretch before walking
+                    CatState.GROOMING, CatState.STRETCHING,
+                    CatState.WALKING, CatState.PAUSED_WALK       -> Unit                 // Ignore; already active
+                    else                                         -> startWalking(cat)
+                }
             }
 
             cat.stateElapsedSec += dt
             cat.animTimeSec += dt
 
             when (cat.state) {
-                CatState.IDLE -> {
-                    cat.idleDurationSec += dt
-                    cat.positionPx = PointF(cat.positionPx.x, cat.laneYPx)
-                    if (cat.idleDurationSec >= cat.idleTargetDurationSec) {
-                        cat.pendingWalk = true
-                    }
-                    cat.blinkCooldownSec -= dt
-                    if (cat.blinkDurationSec > 0f) {
-                        cat.blinkElapsedSec += dt
-                        if (cat.blinkElapsedSec >= cat.blinkDurationSec) {
-                            cat.blinkDurationSec = 0f
-                            cat.blinkElapsedSec = 0f
-                            cat.blinkCooldownSec = Random.nextDouble(3.0, 6.0).toFloat()
-                        }
-                    } else if (cat.blinkCooldownSec <= 0f) {
-                        cat.blinkDurationSec = Random.nextDouble(0.10, 0.16).toFloat()
-                        cat.blinkElapsedSec = 0f
-                    }
-                }
-
-                CatState.WALKING -> {
-                    cat.idleDurationSec = 0f
-                    val dx = cat.targetPx.x - cat.positionPx.x
-                    val dy = cat.targetPx.y - cat.positionPx.y
-                    val dist = hypot(dx.toDouble(), dy.toDouble()).toFloat()
-                    if (dist < 8f) {
-                        transitionToIdle(cat)
-                    } else {
-                        val step = min(behavior.walkSpeedPxPerSec * dt, dist)
-                        cat.positionPx = PointF(
-                            cat.positionPx.x + dx / dist * step,
-                            cat.laneYPx
-                        )
-                        val targetYaw = Math.toDegrees(atan2(-dy, dx).toDouble()).toFloat()
-                        cat.yawDeg = rotateToward(cat.yawDeg, targetYaw, 260f * dt)
-                    }
-                }
-
-                CatState.REACTING -> {
-                    cat.idleDurationSec = 0f
-                    if (cat.reactingLookAtClock) {
-                        val dx = cat.targetPx.x - cat.positionPx.x
-                        val dy = cat.targetPx.y - cat.positionPx.y
-                        val dist = hypot(dx.toDouble(), dy.toDouble()).toFloat()
-                        if (dist > 14f) {
-                            val step = min(behavior.reactMoveSpeedPxPerSec * dt, dist)
-                            cat.positionPx = PointF(
-                                cat.positionPx.x + dx / dist * step,
-                                cat.laneYPx
-                            )
-                        }
-                        val targetYaw = Math.toDegrees(atan2(-dy, dx).toDouble()).toFloat()
-                        cat.yawDeg = rotateToward(cat.yawDeg, targetYaw, 180f * dt)
-                    }
-                    if (cat.stateElapsedSec > behavior.reactDurationSec) {
-                        if (cat.previousState == CatState.WALKING) {
-                            cat.state = CatState.WALKING
-                            cat.stateElapsedSec = 0f
-                        } else {
-                            transitionToIdle(cat)
-                        }
-                        cat.reactingLookAtClock = false
-                    }
-                }
+                CatState.IDLE        -> updateIdleState(cat, dt, behavior)
+                CatState.DOZING      -> updateDozingState(cat, dt)
+                CatState.GROOMING    -> updateGroomingState(cat, dt)
+                CatState.STRETCHING  -> updateStretchingState(cat, dt)
+                CatState.WALKING     -> updateWalkingState(cat, dt, behavior)
+                CatState.PAUSED_WALK -> updatePausedWalkState(cat, dt)
+                CatState.REACTING    -> updateReactingState(cat, dt, behavior, timeCenter)
             }
-            if (cat.state != CatState.WALKING) {
+
+            if (cat.state != CatState.WALKING && cat.state != CatState.PAUSED_WALK) {
                 cat.positionPx = PointF(cat.positionPx.x, cat.laneYPx)
             }
 
@@ -854,23 +856,158 @@ private class CatFilamentRenderer(private val context: Context) {
             applyTransform(cat)
         }
 
-        val allIdleLongEnough = cats.isNotEmpty() && cats.all { it.state == CatState.IDLE && it.idleDurationSec > 10f }
-        targetFrameIntervalNs.set(if (allIdleLongEnough) 100_000_000L else 33_333_333L)
+        // Adaptive framerate: ~24fps active, ~15fps light idle, 10fps deep idle/doze.
+        val anyActive = cats.any { it.state == CatState.WALKING || it.state == CatState.REACTING }
+        val allDeepIdle = cats.isNotEmpty() && cats.all {
+            (it.state == CatState.IDLE && it.idleDurationSec > 8f) ||
+            it.state == CatState.DOZING ||
+            (it.state == CatState.GROOMING && it.groomingDurationSec > 2f)
+        }
+        targetFrameIntervalNs.set(
+            when {
+                anyActive   -> 41_666_666L
+                allDeepIdle -> 100_000_000L
+                else        -> 66_666_666L
+            }
+        )
+    }
+
+    // ── Per-state update functions ─────────────────────────────────────────────
+
+    private fun updateIdleState(cat: CatActor, dt: Float, behavior: CatBehaviorProfile) {
+        cat.idleDurationSec += dt
+        cat.groomCooldownSec -= dt
+        updateBlink(cat, dt)
+        if (cat.idleDurationSec >= cat.idleTargetDurationSec) {
+            val groomChance = when (personality) {
+                CatPersonality.CALM      -> 0.38f
+                CatPersonality.FOCUSED   -> 0.28f
+                CatPersonality.NOCTURNAL -> 0.22f
+                CatPersonality.ENERGETIC -> 0.10f
+            }
+            val dozeChance = when (personality) {
+                CatPersonality.NOCTURNAL -> 0.28f
+                CatPersonality.CALM      -> 0.18f
+                CatPersonality.FOCUSED   -> 0.10f
+                CatPersonality.ENERGETIC -> 0.04f
+            }
+            val roll = Random.nextFloat()
+            when {
+                cat.groomCooldownSec <= 0f && roll < groomChance          -> startGrooming(cat)
+                roll < groomChance + dozeChance                           -> startDozing(cat)
+                else                                                      -> cat.pendingWalk = true
+            }
+        }
+    }
+
+    private fun updateDozingState(cat: CatActor, dt: Float) {
+        cat.dozingDurationSec += dt
+        updateBlink(cat, dt)
+        if (cat.dozingDurationSec >= cat.dozingTargetSec) {
+            startStretching(cat)
+        }
+    }
+
+    private fun updateGroomingState(cat: CatActor, dt: Float) {
+        cat.groomingDurationSec += dt
+        if (cat.groomingDurationSec >= cat.groomingTargetSec) {
+            transitionToIdle(cat)
+        }
+    }
+
+    private fun updateStretchingState(cat: CatActor, dt: Float) {
+        cat.stretchingDurationSec += dt
+        if (cat.stretchingDurationSec >= cat.stretchingTargetSec) {
+            transitionToIdle(cat)
+            cat.pendingWalk = true   // A good stretch always leads to a walk
+        }
+    }
+
+    private fun updateWalkingState(cat: CatActor, dt: Float, behavior: CatBehaviorProfile) {
+        cat.idleDurationSec = 0f
+        if (cat.walkTotalTimeSec <= 0f) { transitionToIdle(cat); return }
+
+        // Advance normalized progress.  walkT ∈ [0,1] drives position via smoothstep,
+        // which guarantees the cat ALWAYS arrives at exactly t=1 with zero velocity.
+        cat.walkT = (cat.walkT + dt / cat.walkTotalTimeSec).coerceIn(0f, 1f)
+
+        // Check the pre-decided mid-walk pause (triggers exactly once, pauseAtT consumed on use)
+        if (cat.pauseAtT in 0f..1f && cat.walkT >= cat.pauseAtT) {
+            cat.pausedWalkRemainSec = cat.pauseDurationSec
+            cat.pauseAtT = -1f  // consume so this never fires again for this walk
+            cat.state = CatState.PAUSED_WALK
+            cat.stateElapsedSec = 0f
+            // walkT is intentionally NOT reset — position stays exactly where we stopped
+            return
+        }
+
+        // Smoothstep lerp: 3t²-2t³ gives ease-in/ease-out and exact arrival at t=1
+        val eased = smoothstep(cat.walkT)
+        cat.positionPx = PointF(
+            cat.walkStartPx.x + (cat.targetPx.x - cat.walkStartPx.x) * eased,
+            cat.laneYPx
+        )
+
+        // Rotate toward the pre-computed walk direction (no per-frame atan2, no instability)
+        cat.yawDeg = rotateToward(cat.yawDeg, cat.walkDirYaw, 220f * dt)
+
+        if (cat.walkT >= 1f) transitionToIdle(cat)
+    }
+
+    private fun updatePausedWalkState(cat: CatActor, dt: Float) {
+        cat.pausedWalkRemainSec -= dt
+        if (cat.pausedWalkRemainSec <= 0f) {
+            // Resume: walkT is preserved exactly where we stopped — no jerk, no restart
+            cat.state = CatState.WALKING
+        }
+    }
+
+    private fun updateReactingState(cat: CatActor, dt: Float, behavior: CatBehaviorProfile, timeCenter: PointF) {
+        cat.idleDurationSec = 0f
+        if (cat.reactingLookAtClock) {
+            val dx = cat.targetPx.x - cat.positionPx.x
+            val dy = cat.targetPx.y - cat.positionPx.y
+            val dist = hypot(dx.toDouble(), dy.toDouble()).toFloat()
+            if (dist > 14f) {
+                val step = min(behavior.reactMoveSpeedPxPerSec * dt, dist)
+                cat.positionPx = PointF(cat.positionPx.x + dx / dist * step, cat.laneYPx)
+            }
+            val targetYaw = Math.toDegrees(atan2(-dy, dx).toDouble()).toFloat()
+            cat.yawDeg = rotateToward(cat.yawDeg, targetYaw, 180f * dt)
+        }
+        if (cat.stateElapsedSec > behavior.reactDurationSec) {
+            if (cat.previousState == CatState.WALKING || cat.previousState == CatState.PAUSED_WALK) {
+                startWalking(cat)
+            } else {
+                transitionToIdle(cat)
+            }
+            cat.reactingLookAtClock = false
+        }
+    }
+
+    private fun updateBlink(cat: CatActor, dt: Float) {
+        cat.blinkCooldownSec -= dt
+        if (cat.blinkDurationSec > 0f) {
+            cat.blinkElapsedSec += dt
+            if (cat.blinkElapsedSec >= cat.blinkDurationSec) {
+                cat.blinkDurationSec = 0f
+                cat.blinkElapsedSec = 0f
+                cat.blinkCooldownSec = Random.nextDouble(3.0, 6.0).toFloat()
+            }
+        } else if (cat.blinkCooldownSec <= 0f) {
+            cat.blinkDurationSec = Random.nextDouble(0.10, 0.16).toFloat()
+            cat.blinkElapsedSec = 0f
+        }
     }
 
     private fun generateWalkTarget(timeRect: RectF, current: PointF, laneY: Float): PointF {
         if (heightPx > widthPx) {
-            val x = Random.nextFloat() * (widthPx * 0.68f - widthPx * 0.32f) + widthPx * 0.32f
-            val y = laneY.coerceIn(heightPx * 0.90f, heightPx * 0.965f)
+            val x = Random.nextFloat() * (widthPx * 0.82f - widthPx * 0.18f) + widthPx * 0.18f
+            val y = laneY.coerceIn(heightPx * 0.88f, heightPx * 0.96f)
             return PointF(x, y)
         }
-        val sideMid = widthPx * 0.5f
-        val targetXRange = if (current.x < sideMid) {
-            (widthPx * 0.62f)..(widthPx * 0.90f)
-        } else {
-            (widthPx * 0.10f)..(widthPx * 0.38f)
-        }
-        val fixedY = laneY.coerceIn(heightPx * 0.955f, heightPx * 0.995f)
+        val targetXRange = (widthPx * 0.06f)..(widthPx * 0.94f)
+        val fixedY = laneY.coerceIn(heightPx * 0.94f, heightPx * 0.99f)
 
         if (timeRect.width() <= 0f || timeRect.height() <= 0f) {
             return PointF(
@@ -908,17 +1045,46 @@ private class CatFilamentRenderer(private val context: Context) {
 
         val transform = FloatArray(16)
         Matrix.setIdentityM(transform, 0)
-        val walkBob = if (cat.state == CatState.WALKING) behavior.walkBobAmp * sin(cat.animTimeSec * 10f) else 0f
-        val breathe = if (cat.state == CatState.IDLE) 1f + (0.02f * sin(cat.animTimeSec * 2.1f)) else 1f
+        val walkBob = if (cat.state == CatState.WALKING) {
+            // Step frequency scales with walk speed so the body bob matches foot cadence
+            val stepFreqRad = (behavior.walkSpeedPxPerSec / 50f) * 2f * PI.toFloat()  // ~2 steps/s at 100px/s
+            behavior.walkBobAmp * sin(cat.animTimeSec * stepFreqRad)
+        } else 0f
+        // Breathing: idle=subtle, doze=slow deep, grooming=slightly elevated
+        val breathe = when (cat.state) {
+            CatState.IDLE     -> 1f + (0.012f * sin(cat.animTimeSec * 1.6f))
+            CatState.DOZING   -> 1f + (0.025f * sin(cat.animTimeSec * 0.55f))
+            CatState.GROOMING -> 1f + (0.008f * sin(cat.animTimeSec * 2.4f))
+            else              -> 1f
+        }
+        // Weather micro-shiver: rain/drizzle = gentle, blizzard/hail = strong
+        val shiver = when {
+            (cat.state == CatState.IDLE || cat.state == CatState.DOZING) &&
+                (weather == ParticleWeather.RAIN || weather == ParticleWeather.DRIZZLE) ->
+                0.004f * sin(cat.animTimeSec * 9f)
+            (cat.state == CatState.IDLE || cat.state == CatState.DOZING) &&
+                (weather == ParticleWeather.BLIZZARD || weather == ParticleWeather.HAIL) ->
+                0.007f * sin(cat.animTimeSec * 13f)
+            else -> 0f
+        }
         val blinkScaleY = if (cat.blinkDurationSec > 0f) {
             val t = (cat.blinkElapsedSec / cat.blinkDurationSec).coerceIn(0f, 1f)
             1f - 0.06f * pulseEase(t)
         } else {
             1f
         }
-        val idleHeadTurn = if (cat.state == CatState.IDLE) behavior.idleHeadTurnAmpDeg * sin(cat.animTimeSec * 0.8f) else 0f
-        val reactHeadTurn = if (cat.state == CatState.REACTING) behavior.reactHeadTurnAmpDeg * sin(cat.stateElapsedSec * 5f) else 0f
-        Matrix.translateM(transform, 0, x, y + walkBob, 0f)
+        // Head sway: idle=gentle, doze=very slow droop, paused_walk=curious look-around
+        val idleHeadTurn = when (cat.state) {
+            CatState.IDLE   -> behavior.idleHeadTurnAmpDeg * sin(cat.animTimeSec * 0.8f)
+            CatState.DOZING -> behavior.idleHeadTurnAmpDeg * 0.3f * sin(cat.animTimeSec * 0.35f)
+            else            -> 0f
+        }
+        val reactHeadTurn = when (cat.state) {
+            CatState.REACTING    -> behavior.reactHeadTurnAmpDeg * sin(cat.stateElapsedSec * 5f)
+            CatState.PAUSED_WALK -> behavior.idleHeadTurnAmpDeg * 1.5f * sin(cat.animTimeSec * 1.2f)
+            else                 -> 0f
+        }
+        Matrix.translateM(transform, 0, x, y + walkBob + shiver, 0f)
         Matrix.rotateM(transform, 0, cat.yawDeg + cat.modelYawOffsetDeg + idleHeadTurn + reactHeadTurn, 0f, 1f, 0f)
         Matrix.scaleM(transform, 0, cat.modelScale, cat.modelScale * breathe * blinkScaleY, cat.modelScale)
         // Keep the source model's local pivot unchanged; vertical placement is controlled by world y offset.
@@ -933,25 +1099,35 @@ private class CatFilamentRenderer(private val context: Context) {
         val animator = cat.animator ?: return
         if (animator.animationCount <= 0) return
         val baseClip = when (cat.state) {
-            CatState.IDLE -> cat.clips.idle
-            CatState.WALKING -> cat.clips.walking
-            CatState.REACTING -> if (cat.reactingLookAtClock) cat.clips.look else cat.clips.react
+            CatState.IDLE, CatState.DOZING -> cat.clips.idle
+            CatState.GROOMING              -> cat.clips.react      // Groom reuses react animation, looped
+            CatState.STRETCHING            -> cat.clips.react      // Stretch plays react once
+            CatState.WALKING               -> cat.clips.walking
+            CatState.PAUSED_WALK           -> cat.clips.look       // Look around while paused
+            CatState.REACTING              -> if (cat.reactingLookAtClock) cat.clips.look else cat.clips.react
         }.coerceIn(0, animator.animationCount - 1)
-        val clip = if (cat.state == CatState.IDLE && cat.blinkDurationSec > 0f) {
+        val clip = if ((cat.state == CatState.IDLE || cat.state == CatState.DOZING) && cat.blinkDurationSec > 0f) {
             cat.clips.blink.coerceIn(0, animator.animationCount - 1)
         } else {
             baseClip
         }
 
         val duration = runCatching { animator.getAnimationDuration(clip) }.getOrElse { 1f }.coerceAtLeast(0.1f)
-        val time = when {
-            cat.state == CatState.REACTING -> {
+        val time = when (cat.state) {
+            CatState.REACTING -> {
                 val raw = (cat.stateElapsedSec / duration).coerceIn(0f, 1f)
                 easeInOut(raw) * duration
             }
-            cat.state == CatState.IDLE && cat.blinkDurationSec > 0f -> {
-                val raw = (cat.blinkElapsedSec / cat.blinkDurationSec).coerceIn(0f, 1f)
-                raw * duration
+            CatState.IDLE, CatState.DOZING -> {
+                if (cat.blinkDurationSec > 0f) {
+                    (cat.blinkElapsedSec / cat.blinkDurationSec).coerceIn(0f, 1f) * duration
+                } else {
+                    cat.animTimeSec % duration
+                }
+            }
+            CatState.STRETCHING -> {
+                // Play react clip once from start to end, then hold last frame
+                (cat.stretchingDurationSec / cat.stretchingTargetSec.coerceAtLeast(0.1f)).coerceIn(0f, 1f) * duration
             }
             else -> cat.animTimeSec % duration
         }
@@ -966,9 +1142,77 @@ private class CatFilamentRenderer(private val context: Context) {
         cat.idleTargetDurationSec = randomIdleTargetSec()
     }
 
+    private fun startDozing(cat: CatActor) {
+        cat.state = CatState.DOZING
+        cat.stateElapsedSec = 0f
+        cat.dozingDurationSec = 0f
+        cat.dozingTargetSec = when (personality) {
+            CatPersonality.NOCTURNAL -> 60f + Random.nextFloat() * 120f
+            CatPersonality.CALM      -> 40f + Random.nextFloat() *  80f
+            CatPersonality.FOCUSED   -> 25f + Random.nextFloat() *  50f
+            CatPersonality.ENERGETIC -> 15f + Random.nextFloat() *  25f
+        }
+    }
+
+    private fun startGrooming(cat: CatActor) {
+        cat.state = CatState.GROOMING
+        cat.stateElapsedSec = 0f
+        cat.groomingDurationSec = 0f
+        cat.groomingTargetSec = 4f + Random.nextFloat() * 8f    // 4–12 second groom
+        cat.groomCooldownSec  = 30f + Random.nextFloat() * 50f  // cooldown until next groom
+    }
+
+    private fun startStretching(cat: CatActor) {
+        cat.state = CatState.STRETCHING
+        cat.stateElapsedSec = 0f
+        cat.stretchingDurationSec = 0f
+        cat.stretchingTargetSec = 1.5f + Random.nextFloat() * 1.5f  // 1.5–3s stretch
+        cat.dozingDurationSec = 0f
+    }
+
+    private fun startWalking(cat: CatActor) {
+        val target = generateWalkTarget(forbiddenRect, cat.positionPx, cat.laneYPx)
+        val dx = target.x - cat.positionPx.x
+        val dy = target.y - cat.positionPx.y
+        val dist = hypot(dx.toDouble(), dy.toDouble()).toFloat().coerceAtLeast(1f)
+        val speed = behaviorProfile().walkSpeedPxPerSec.coerceAtLeast(1f)
+
+        cat.previousState = cat.state
+        cat.state = CatState.WALKING
+        cat.stateElapsedSec = 0f
+        cat.idleDurationSec = 0f
+        // Capture all walk parameters upfront — motion is computed deterministically from these
+        cat.walkStartPx = PointF(cat.positionPx.x, cat.positionPx.y)
+        cat.targetPx = target
+        cat.walkT = 0f
+        cat.walkTotalTimeSec = dist / speed
+        // Pre-compute facing angle from the full start→target vector (avoids atan2 instability at destination)
+        cat.walkDirYaw = Math.toDegrees(atan2(-dy, dx).toDouble()).toFloat()
+        // Decide NOW whether to pause mid-walk (one roll, not per-frame polling)
+        val pauseChance = when (personality) {
+            CatPersonality.CALM      -> 0.55f
+            CatPersonality.NOCTURNAL -> 0.48f
+            CatPersonality.FOCUSED   -> 0.18f
+            CatPersonality.ENERGETIC -> 0.08f
+        }
+        if (Random.nextFloat() < pauseChance) {
+            cat.pauseAtT = 0.35f + Random.nextFloat() * 0.30f  // pause at 35–65% through walk
+            cat.pauseDurationSec = 1.2f + Random.nextFloat() * 2.8f
+        } else {
+            cat.pauseAtT = -1f
+            cat.pauseDurationSec = 0f
+        }
+    }
+
     private fun easeInOut(t: Float): Float {
         val x = t.coerceIn(0f, 1f)
         return (0.5 - 0.5 * cos(x * PI)).toFloat()
+    }
+
+    // Standard cubic smoothstep: guarantees f(0)=0, f(1)=1, f'(0)=f'(1)=0
+    private fun smoothstep(t: Float): Float {
+        val x = t.coerceIn(0f, 1f)
+        return x * x * (3f - 2f * x)
     }
 
     private fun pulseEase(t: Float): Float {
