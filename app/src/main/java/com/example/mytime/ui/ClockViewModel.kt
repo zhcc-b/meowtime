@@ -971,6 +971,20 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         persistSetting { this[PreferenceKeys.dailyAlarmMinute] = _uiState.value.dailyAlarmMinute }
     }
 
+    fun setDailyAlarmHour(hour: Int) {
+        val normalizedHour = hour.floorMod(24)
+        if (_uiState.value.dailyAlarmHour == normalizedHour) return
+        _uiState.update { it.copy(dailyAlarmHour = normalizedHour) }
+        persistSetting { this[PreferenceKeys.dailyAlarmHour] = normalizedHour }
+    }
+
+    fun setDailyAlarmMinute(minute: Int) {
+        val normalizedMinute = minute.floorMod(60)
+        if (_uiState.value.dailyAlarmMinute == normalizedMinute) return
+        _uiState.update { it.copy(dailyAlarmMinute = normalizedMinute) }
+        persistSetting { this[PreferenceKeys.dailyAlarmMinute] = normalizedMinute }
+    }
+
     fun toggleBreakReminder(enabled: Boolean) {
         _uiState.update { it.copy(breakReminderEnabled = enabled) }
         persistSetting { this[PreferenceKeys.breakReminder] = enabled }

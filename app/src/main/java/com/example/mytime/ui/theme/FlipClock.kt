@@ -7,8 +7,11 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -67,6 +70,7 @@ import com.example.mytime.ui.ThemePreset
 import com.example.mytime.ui.UiFontFamily
 import com.example.mytime.ui.profile
 import coil.compose.AsyncImage
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
 import kotlin.math.cos
 import kotlin.math.sin
@@ -97,8 +101,8 @@ fun FlipClockScreen(
     onAdjustCountdown: (Int) -> Unit,
     onToggleHourlyChime: (Boolean) -> Unit,
     onToggleDailyAlarm: (Boolean) -> Unit,
-    onAdjustDailyAlarmHour: (Int) -> Unit,
-    onAdjustDailyAlarmMinute: (Int) -> Unit,
+    onSetDailyAlarmHour: (Int) -> Unit,
+    onSetDailyAlarmMinute: (Int) -> Unit,
     onToggleBreakReminder: (Boolean) -> Unit,
     onSetThemePreset: (ThemePreset) -> Unit,
     onToggleThemeEdgeLight: (Boolean) -> Unit,
@@ -222,8 +226,8 @@ fun FlipClockScreen(
             onToggle24HourFormat = onToggle24HourFormat,
             onToggleHourlyChime = onToggleHourlyChime,
             onToggleDailyAlarm = onToggleDailyAlarm,
-            onAdjustDailyAlarmHour = onAdjustDailyAlarmHour,
-            onAdjustDailyAlarmMinute = onAdjustDailyAlarmMinute,
+            onSetDailyAlarmHour = onSetDailyAlarmHour,
+            onSetDailyAlarmMinute = onSetDailyAlarmMinute,
             onToggleBreakReminder = { enabled ->
                 onToggleBreakReminder(enabled)
                 overlayInfo = OverlayInfo(
@@ -1501,8 +1505,8 @@ private fun SettingsMenu(
     onToggle24HourFormat: (Boolean) -> Unit,
     onToggleHourlyChime: (Boolean) -> Unit,
     onToggleDailyAlarm: (Boolean) -> Unit,
-    onAdjustDailyAlarmHour: (Int) -> Unit,
-    onAdjustDailyAlarmMinute: (Int) -> Unit,
+    onSetDailyAlarmHour: (Int) -> Unit,
+    onSetDailyAlarmMinute: (Int) -> Unit,
     onToggleBreakReminder: (Boolean) -> Unit,
     onSetThemePreset: (ThemePreset) -> Unit,
     onToggleThemeEdgeLight: (Boolean) -> Unit,
@@ -1579,13 +1583,13 @@ private fun SettingsMenu(
                         SettingToggle(stringResource(id = R.string.settings_theme_edge_light), state.isThemeEdgeLightEnabled, onToggleThemeEdgeLight)
                         SettingToggle(stringResource(id = R.string.settings_hourly_chime), state.hourlyChimeEnabled, onToggleHourlyChime)
                         SettingToggle(stringResource(id = R.string.settings_break_reminder), state.breakReminderEnabled, onToggleBreakReminder)
-                        SettingToggle(stringResource(id = R.string.settings_daily_alarm), state.dailyAlarmEnabled, onToggleDailyAlarm)
-                        AlarmTimeAdjuster(
+                        DailyAlarmCard(
                             enabled = state.dailyAlarmEnabled,
                             hour = state.dailyAlarmHour,
                             minute = state.dailyAlarmMinute,
-                            onAdjustHour = onAdjustDailyAlarmHour,
-                            onAdjustMinute = onAdjustDailyAlarmMinute
+                            onEnabledChange = onToggleDailyAlarm,
+                            onSetHour = onSetDailyAlarmHour,
+                            onSetMinute = onSetDailyAlarmMinute
                         )
                         SettingsCardSurface(
                             shape = RoundedCornerShape(24.dp),
@@ -1795,35 +1799,171 @@ private fun ThemePresetSelector(
 }
 
 @Composable
-private fun AlarmTimeAdjuster(
+private fun DailyAlarmCard(
     enabled: Boolean,
     hour: Int,
     minute: Int,
-    onAdjustHour: (Int) -> Unit,
-    onAdjustMinute: (Int) -> Unit
+    onEnabledChange: (Boolean) -> Unit,
+    onSetHour: (Int) -> Unit,
+    onSetMinute: (Int) -> Unit
 ) {
-    if (!enabled) return
     SettingsCardSurface(
         shape = RoundedCornerShape(24.dp),
         padding = PaddingValues(16.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                stringResource(id = R.string.settings_alarm_time),
-                color = LiquidGlassText.copy(alpha = 0.68f),
-                fontSize = 13.sp
-            )
-            Text(
-                text = "%02d:%02d".format(hour, minute),
-                color = LiquidGlassText,
-                fontSize = 18.sp,
-                fontFamily = UiFontFamily
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                TinyActionChip(text = "-H", onClick = { onAdjustHour(-1) })
-                TinyActionChip(text = "+H", onClick = { onAdjustHour(1) })
-                TinyActionChip(text = "-M", onClick = { onAdjustMinute(-5) })
-                TinyActionChip(text = "+M", onClick = { onAdjustMinute(5) })
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        stringResource(id = R.string.settings_daily_alarm),
+                        color = LiquidGlassText.copy(alpha = 0.88f),
+                        fontSize = 16.sp
+                    )
+                    Text(
+                        text = "%02d:%02d".format(hour, minute),
+                        color = LiquidGlassText.copy(alpha = 0.50f),
+                        fontSize = 11.sp,
+                        fontFamily = UiFontFamily
+                    )
+                }
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = onEnabledChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Color(0xFFB7E2FF),
+                        uncheckedThumbColor = Color.White.copy(alpha = 0.92f),
+                        uncheckedTrackColor = Color.White.copy(alpha = 0.22f),
+                        uncheckedBorderColor = Color.Transparent,
+                        checkedBorderColor = Color.Transparent
+                    )
+                )
+            }
+            AnimatedVisibility(visible = enabled) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.10f))
+                    Text(
+                        stringResource(id = R.string.settings_alarm_time),
+                        color = LiquidGlassText.copy(alpha = 0.58f),
+                        fontSize = 12.sp,
+                        fontFamily = UiFontFamily
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(142.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TimeWheelColumn(
+                            values = (0..23).toList(),
+                            selected = hour,
+                            labelFormatter = { "%02d".format(it) },
+                            onSelected = onSetHour
+                        )
+                        Text(
+                            ":",
+                            color = LiquidGlassText.copy(alpha = 0.62f),
+                            fontSize = 24.sp,
+                            fontFamily = UiFontFamily,
+                            modifier = Modifier.padding(horizontal = 10.dp)
+                        )
+                        TimeWheelColumn(
+                            values = (0..59).toList(),
+                            selected = minute,
+                            labelFormatter = { "%02d".format(it) },
+                            onSelected = onSetMinute
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalFoundationApi::class)
+private fun TimeWheelColumn(
+    values: List<Int>,
+    selected: Int,
+    labelFormatter: (Int) -> String,
+    onSelected: (Int) -> Unit
+) {
+    val selectedIndex = values.indexOf(selected).coerceAtLeast(0)
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = selectedIndex)
+    val flingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
+    val currentSelected by rememberUpdatedState(selected)
+    val centeredIndex by remember {
+        derivedStateOf {
+            val layoutInfo = listState.layoutInfo
+            val viewportCenter = (layoutInfo.viewportStartOffset + layoutInfo.viewportEndOffset) / 2
+            layoutInfo.visibleItemsInfo
+                .minByOrNull { item -> kotlin.math.abs((item.offset + item.size / 2) - viewportCenter) }
+                ?.index
+                ?.coerceIn(0, values.lastIndex)
+                ?: selectedIndex
+        }
+    }
+
+    LaunchedEffect(selectedIndex) {
+        if (!listState.isScrollInProgress && centeredIndex != selectedIndex) {
+            listState.scrollToItem(selectedIndex)
+        }
+    }
+
+    LaunchedEffect(listState, values) {
+        snapshotFlow { centeredIndex }
+            .distinctUntilChanged()
+            .collect { index ->
+                val value = values[index]
+                if (value != currentSelected) {
+                    onSelected(value)
+                }
+            }
+    }
+
+    Box(
+        modifier = Modifier
+            .width(86.dp)
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(22.dp))
+            .background(Color.White.copy(alpha = 0.055f))
+            .drawWithContent {
+                val centerY = size.height / 2f
+                drawRoundRect(
+                    color = Color.White.copy(alpha = 0.10f),
+                    topLeft = Offset(6.dp.toPx(), centerY - 20.dp.toPx()),
+                    size = Size(size.width - 12.dp.toPx(), 40.dp.toPx()),
+                    cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx())
+                )
+                drawContent()
+            }
+    ) {
+        LazyColumn(
+            state = listState,
+            flingBehavior = flingBehavior,
+            contentPadding = PaddingValues(vertical = 51.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            items(values.size) { index ->
+                val value = values[index]
+                val distance = kotlin.math.abs(index - centeredIndex)
+                Text(
+                    text = labelFormatter(value),
+                    color = LiquidGlassText.copy(alpha = if (distance == 0) 0.95f else 0.32f),
+                    fontSize = if (distance == 0) 22.sp else 16.sp,
+                    fontFamily = UiFontFamily,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .height(40.dp)
+                        .fillMaxWidth()
+                        .wrapContentHeight(Alignment.CenterVertically)
+                )
             }
         }
     }

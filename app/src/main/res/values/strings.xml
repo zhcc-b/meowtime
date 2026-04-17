@@ -14,7 +14,7 @@
     <string name="settings_white_noise">Sleep Sound</string>
     <string name="settings_sleep_sound">Sleep Sound</string>
     <string name="settings_sleep_sound_with_timer">Sleep Sound · %1$s</string>
-    <string name="settings_sleep_sound_type">Sleep Sound Type</string>
+    <string name="settings_sleep_sound_type">Ambient Sound</string>
     <string name="settings_sleep_sound_remaining">Off in %1$s</string>
     <string name="settings_sleep_sound_hint">Choose a sleep sound and tap the switch to start.</string>
     <string name="settings_sleep_sound_auto_off">Automatically stops after 1 hour.</string>

@@ -14,7 +14,7 @@
     <string name="settings_white_noise">睡眠声音</string>
     <string name="settings_sleep_sound">睡眠声音</string>
     <string name="settings_sleep_sound_with_timer">睡眠声音 · %1$s</string>
-    <string name="settings_sleep_sound_type">睡眠声音类型</string>
+    <string name="settings_sleep_sound_type">环境声音</string>
     <string name="settings_sleep_sound_remaining">%1$s 后关闭</string>
     <string name="settings_sleep_sound_hint">选择一种睡眠声音，打开右侧开关即可播放。</string>
     <string name="settings_sleep_sound_auto_off">默认 1 小时后自动关闭。</string>
