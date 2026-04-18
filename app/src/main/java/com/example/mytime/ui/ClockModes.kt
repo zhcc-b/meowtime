@@ -41,9 +41,7 @@ enum class EdgeLightMode {
 data class ThemePresetProfile(
     val fontName: String,
     val weather: ParticleWeather,
-    val particlesEnabled: Boolean,
     val catsEnabled: Boolean,
-    val dynamicWallpaperEnabled: Boolean,
     val soundButtonVisible: Boolean,
     val quietLayout: Boolean,
     val dimStrength: Float
@@ -68,9 +66,7 @@ fun ThemePreset.profile(): ThemePresetProfile {
         ThemePreset.FOCUS -> ThemePresetProfile(
             fontName = "Digital",
             weather = ParticleWeather.WIND,
-            particlesEnabled = true,
             catsEnabled = true,
-            dynamicWallpaperEnabled = true,
             soundButtonVisible = false,
             quietLayout = false,
             dimStrength = 0.90f
@@ -78,9 +74,7 @@ fun ThemePreset.profile(): ThemePresetProfile {
         ThemePreset.PLAYFUL -> ThemePresetProfile(
             fontName = "Pixel",
             weather = ParticleWeather.SUNNY,
-            particlesEnabled = true,
             catsEnabled = true,
-            dynamicWallpaperEnabled = true,
             soundButtonVisible = true,
             quietLayout = false,
             dimStrength = 0.92f
@@ -88,9 +82,7 @@ fun ThemePreset.profile(): ThemePresetProfile {
         ThemePreset.SERENE -> ThemePresetProfile(
             fontName = "Modern",
             weather = ParticleWeather.FOG,
-            particlesEnabled = true,
             catsEnabled = true,
-            dynamicWallpaperEnabled = true,
             soundButtonVisible = true,
             quietLayout = false,
             dimStrength = 0.84f
@@ -98,9 +90,7 @@ fun ThemePreset.profile(): ThemePresetProfile {
         ThemePreset.NIGHT -> ThemePresetProfile(
             fontName = "Thick",
             weather = ParticleWeather.DRIZZLE,
-            particlesEnabled = true,
             catsEnabled = true,
-            dynamicWallpaperEnabled = true,
             soundButtonVisible = false,
             quietLayout = true,
             dimStrength = 0.62f

@@ -3,11 +3,9 @@
     <string name="settings_title">Settings</string>
     <string name="settings_subtitle">Liquid controls</string>
     <string name="settings_gyroscope">Gyroscope 3D</string>
-    <string name="settings_particles">Particle Background</string>
     <string name="settings_particle_weather">Particle Weather</string>
     <string name="settings_particle_weather_auto">Auto (Random every 8h)</string>
     <string name="settings_cats">Realtime Cats</string>
-    <string name="settings_wallpaper">Auto Wallpaper</string>
     <string name="settings_burnin">Burn-in Protection</string>
     <string name="settings_24_hour">24-Hour Format</string>
     <string name="settings_white_noise">Sleep Sound</string>

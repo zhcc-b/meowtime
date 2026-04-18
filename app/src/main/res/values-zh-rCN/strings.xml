@@ -3,11 +3,9 @@
     <string name="settings_title">设置</string>
     <string name="settings_subtitle">液态控制</string>
     <string name="settings_gyroscope">陀螺仪 3D</string>
-    <string name="settings_particles">粒子背景</string>
     <string name="settings_particle_weather">粒子天气</string>
     <string name="settings_particle_weather_auto">自动（每8小时随机）</string>
     <string name="settings_cats">实时小猫</string>
-    <string name="settings_wallpaper">自动壁纸</string>
     <string name="settings_burnin">防烧屏</string>
     <string name="settings_24_hour">24 小时制</string>
     <string name="settings_white_noise">睡眠声音</string>

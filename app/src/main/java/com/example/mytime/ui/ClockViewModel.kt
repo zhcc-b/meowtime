@@ -59,9 +59,7 @@ private val Context.dataStore by preferencesDataStore(name = "clock_settings")
 private object PreferenceKeys {
     val burnIn = booleanPreferencesKey("burn_in")
     val parallax = booleanPreferencesKey("parallax")
-    val particles = booleanPreferencesKey("particles")
     val cats = booleanPreferencesKey("cats")
-    val dynamicWallpaper = booleanPreferencesKey("dynamic_wallpaper")
     val is24Hour = booleanPreferencesKey("is_24_hour")
     val selectedFont = stringPreferencesKey("selected_font")
     val particleWeatherMode = stringPreferencesKey("particle_weather_mode")
@@ -158,11 +156,9 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                     state.copy(
                         isBurnInProtectionEnabled = preferences[PreferenceKeys.burnIn] ?: state.isBurnInProtectionEnabled,
                         isParallaxEnabled = preferences[PreferenceKeys.parallax] ?: state.isParallaxEnabled,
-                        isParticleSystemEnabled = preferences[PreferenceKeys.particles] ?: state.isParticleSystemEnabled,
                         isParticleWeatherAuto = manualWeather == null,
                         particleWeather = manualWeather ?: state.particleWeather,
                         isCatSystemEnabled = preferences[PreferenceKeys.cats] ?: state.isCatSystemEnabled,
-                        isDynamicWallpaperEnabled = preferences[PreferenceKeys.dynamicWallpaper] ?: state.isDynamicWallpaperEnabled,
                         is24HourFormat = preferences[PreferenceKeys.is24Hour] ?: state.is24HourFormat,
                         selectedFont = selectedFont,
                         clockMode = mode,
@@ -302,12 +298,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         h12.toString().padStart(2, '0')
                     }
                     val amPm = if (workingState.is24HourFormat) "" else now.format(amPmFormatter)
-                    val onlineWallpaper = if (!isNightQuietHours && workingState.isDynamicWallpaperEnabled) {
-                        getOnlineBackgroundForTime(now, hour24)
-                    } else {
-                        null
-                    }
-
                     val hourlyMarker = "${now.toLocalDate()}-$hour24"
                     val dailyMarker = "${now.toLocalDate()}-${workingState.dailyAlarmHour}-${workingState.dailyAlarmMinute}"
                     var companionMessage = modeTick.message ?: workingState.companionMessage
@@ -340,8 +330,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         date = now.format(dateFormatter),
                         dayOfWeek = now.dayOfWeek.getDisplayName(TextStyle.FULL, locale),
                         // Avoid bright/sunny background imagery during quiet night hours.
-                        backgroundRes = if (isNightQuietHours || workingState.isDynamicWallpaperEnabled) null else R.drawable.jiguang,
-                        backgroundUrl = onlineWallpaper,
+                        backgroundRes = if (isNightQuietHours) null else R.drawable.jiguang,
                         particleWeather = if (workingState.isParticleWeatherAuto) activeWeather else workingState.particleWeather,
                         burnInOffset = burnInOffset,
                         companionMessage = companionMessage
@@ -472,28 +461,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         }
     }
 
-    private fun getOnlineBackgroundForTime(now: ZonedDateTime, hour: Int): String {
-        val urls = when (hour) {
-            in 6..11 -> listOf(
-                "https://picsum.photos/seed/meowtime-morning-1/1920/1080",
-                "https://picsum.photos/seed/meowtime-morning-2/1920/1080",
-                "https://picsum.photos/seed/meowtime-morning-3/1920/1080"
-            )
-            in 12..17 -> listOf(
-                "https://picsum.photos/seed/meowtime-afternoon-1/1920/1080",
-                "https://picsum.photos/seed/meowtime-afternoon-2/1920/1080",
-                "https://picsum.photos/seed/meowtime-afternoon-3/1920/1080"
-            )
-            else -> listOf(
-                "https://picsum.photos/seed/meowtime-night-1/1920/1080",
-                "https://picsum.photos/seed/meowtime-night-2/1920/1080",
-                "https://picsum.photos/seed/meowtime-night-3/1920/1080"
-            )
-        }
-        val index = ((now.year + now.dayOfYear + (hour / 6)) % urls.size).coerceAtLeast(0)
-        return urls[index]
-    }
-
     private data class ModeTickResult(
         val state: ClockState,
         val message: String? = null,
@@ -591,9 +558,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
             selectedFont = presetFont,
             particleWeather = if (state.isParticleWeatherAuto) state.particleWeather else profile.weather,
             isParticleWeatherAuto = state.isParticleWeatherAuto,
-            isParticleSystemEnabled = profile.particlesEnabled,
             isCatSystemEnabled = profile.catsEnabled,
-            isDynamicWallpaperEnabled = profile.dynamicWallpaperEnabled,
             isSoundButtonVisible = profile.soundButtonVisible,
             activeThemePreset = preset
         )
@@ -956,11 +921,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         persistSetting { this[PreferenceKeys.parallax] = enabled }
     }
 
-    fun toggleParticles(enabled: Boolean) {
-        _uiState.update { it.copy(isParticleSystemEnabled = enabled) }
-        persistSetting { this[PreferenceKeys.particles] = enabled }
-    }
-
     fun setParticleWeatherAuto(auto: Boolean) {
         _uiState.update { state ->
             if (auto) {
@@ -999,11 +959,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     fun toggleCats(enabled: Boolean) {
         _uiState.update { it.copy(isCatSystemEnabled = enabled) }
         persistSetting { this[PreferenceKeys.cats] = enabled }
-    }
-
-    fun toggleDynamicWallpaper(enabled: Boolean) {
-        _uiState.update { it.copy(isDynamicWallpaperEnabled = enabled) }
-        persistSetting { this[PreferenceKeys.dynamicWallpaper] = enabled }
     }
 
     fun toggle24HourFormat(enabled: Boolean) {

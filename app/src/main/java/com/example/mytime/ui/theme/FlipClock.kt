@@ -71,7 +71,6 @@ import com.example.mytime.ui.SleepSoundMode
 import com.example.mytime.ui.ThemePreset
 import com.example.mytime.ui.UiFontFamily
 import com.example.mytime.ui.profile
-import coil.compose.AsyncImage
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
 import kotlin.math.cos
@@ -88,11 +87,9 @@ fun FlipClockScreen(
     onToggleBurnIn: (Boolean) -> Unit,
     onSelectFont: (ClockFont) -> Unit,
     onToggleParallax: (Boolean) -> Unit,
-    onToggleParticles: (Boolean) -> Unit,
     onToggleParticleWeatherAuto: (Boolean) -> Unit,
     onSelectParticleWeather: (ParticleWeather) -> Unit,
     onToggleCats: (Boolean) -> Unit,
-    onToggleDynamicWallpaper: (Boolean) -> Unit,
     onToggle24HourFormat: (Boolean) -> Unit,
     onSetClockMode: (ClockMode) -> Unit,
     onToggleModeRunning: () -> Unit,
@@ -140,32 +137,18 @@ fun FlipClockScreen(
             }
             .alpha(if (state.isSettingsVisible) 0.24f else 0.6f)
 
-        if (state.backgroundUrl != null) {
-            AsyncImage(
-                model = state.backgroundUrl,
+        state.backgroundRes?.let { resId ->
+            Image(
+                painter = painterResource(id = resId),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = backgroundModifier,
-                error = painterResource(id = R.drawable.jiguang),
-                placeholder = painterResource(id = R.drawable.jiguang),
                 colorFilter = ColorFilter.tint(Color.Black.copy(alpha = 0.5f), BlendMode.Multiply)
             )
-        } else {
-            state.backgroundRes?.let { resId ->
-                Image(
-                    painter = painterResource(id = resId),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = backgroundModifier,
-                    colorFilter = ColorFilter.tint(Color.Black.copy(alpha = 0.5f), BlendMode.Multiply)
-                )
-            }
         }
 
-        if (state.isParticleSystemEnabled) {
-            Box(modifier = Modifier.alpha(if (state.isSettingsVisible) 0.22f else 1f)) {
-                SeamlessParticleLayer(weather = state.particleWeather)
-            }
+        Box(modifier = Modifier.alpha(if (state.isSettingsVisible) 0.22f else 1f)) {
+            SeamlessParticleLayer(weather = state.particleWeather)
         }
 
         FilamentCatOverlay(
@@ -227,11 +210,9 @@ fun FlipClockScreen(
             onToggleBurnIn = onToggleBurnIn,
             onSelectFont = onSelectFont,
             onToggleParallax = onToggleParallax,
-            onToggleParticles = onToggleParticles,
             onToggleParticleWeatherAuto = onToggleParticleWeatherAuto,
             onSelectParticleWeather = onSelectParticleWeather,
             onToggleCats = onToggleCats,
-            onToggleDynamicWallpaper = onToggleDynamicWallpaper,
             onToggle24HourFormat = onToggle24HourFormat,
             onToggleHourlyChime = onToggleHourlyChime,
             onToggleDailyAlarm = onToggleDailyAlarm,
@@ -1547,11 +1528,9 @@ private fun SettingsMenu(
     onToggleBurnIn: (Boolean) -> Unit,
     onSelectFont: (ClockFont) -> Unit,
     onToggleParallax: (Boolean) -> Unit,
-    onToggleParticles: (Boolean) -> Unit,
     onToggleParticleWeatherAuto: (Boolean) -> Unit,
     onSelectParticleWeather: (ParticleWeather) -> Unit,
     onToggleCats: (Boolean) -> Unit,
-    onToggleDynamicWallpaper: (Boolean) -> Unit,
     onToggle24HourFormat: (Boolean) -> Unit,
     onToggleHourlyChime: (Boolean) -> Unit,
     onToggleDailyAlarm: (Boolean) -> Unit,
@@ -1601,17 +1580,13 @@ private fun SettingsMenu(
                         )
                         HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
                         SettingToggle(stringResource(id = R.string.settings_gyroscope), state.isParallaxEnabled, onToggleParallax)
-                        SettingToggle(stringResource(id = R.string.settings_particles), state.isParticleSystemEnabled, onToggleParticles)
-                        if (state.isParticleSystemEnabled) {
-                            ParticleWeatherSelector(
-                                isAuto = state.isParticleWeatherAuto,
-                                selected = state.particleWeather,
-                                onToggleAuto = onToggleParticleWeatherAuto,
-                                onSelectWeather = onSelectParticleWeather
-                            )
-                        }
+                        ParticleWeatherSelector(
+                            isAuto = state.isParticleWeatherAuto,
+                            selected = state.particleWeather,
+                            onToggleAuto = onToggleParticleWeatherAuto,
+                            onSelectWeather = onSelectParticleWeather
+                        )
                         SettingToggle(stringResource(id = R.string.settings_cats), state.isCatSystemEnabled, onToggleCats)
-                        SettingToggle(stringResource(id = R.string.settings_wallpaper), state.isDynamicWallpaperEnabled, onToggleDynamicWallpaper)
                         SettingToggle(stringResource(id = R.string.settings_burnin), state.isBurnInProtectionEnabled, onToggleBurnIn)
                         SettingToggle(stringResource(id = R.string.settings_24_hour), state.is24HourFormat, onToggle24HourFormat)
                         SleepSoundSelector(

@@ -17,7 +17,6 @@ data class ClockState(
     val batteryLevel: String = "--",
     val location: String = "--",
     val backgroundRes: Int? = null,
-    val backgroundUrl: String? = null,
     
     // 设置项
     val isBurnInProtectionEnabled: Boolean = true,
@@ -26,11 +25,9 @@ data class ClockState(
     
     // 酷炫效果开关
     val isParallaxEnabled: Boolean = true,
-    val isParticleSystemEnabled: Boolean = false,
     val isParticleWeatherAuto: Boolean = true,
     val particleWeather: ParticleWeather = ParticleWeather.SNOW,
     val isCatSystemEnabled: Boolean = true,
-    val isDynamicWallpaperEnabled: Boolean = true,
     val is24HourFormat: Boolean = true,
     
     // 字体设置
