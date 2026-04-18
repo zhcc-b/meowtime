@@ -55,6 +55,9 @@
     <string name="mode_focus_minutes">专注 %1$d 分钟</string>
     <string name="mode_break_minutes">休息 %1$d 分钟</string>
     <string name="mode_countdown_minutes">倒计时 %1$d 分钟</string>
+    <string name="mode_focus_duration">专注分钟</string>
+    <string name="mode_break_duration">休息分钟</string>
+    <string name="mode_countdown_duration">倒计时分钟</string>
     <string name="mode_stopwatch_stats">已累计 %1$s</string>
     <string name="mode_clock_hint">主题预设会一起调整大屏时钟的氛围。</string>
     <string name="current_remaining">当前：剩余 %1$s</string>
@@ -70,7 +73,14 @@
     <string name="companion_timer_started">计时开始，猫猫正在陪你。</string>
     <string name="companion_timer_paused">计时已暂停，猫猫在等你继续。</string>
     <string name="reminder_hourly_chime">%1$s 整，做个整点检查。</string>
-    <string name="reminder_alarm_now">闹钟时间到了，猫猫来叫你啦。</string>
+    <string name="reminder_alarm_now">闹钟时间到了。</string>
+    <string name="alarm_enabled_hint">闹钟已开启</string>
+    <string name="alarm_dialog_title">闹钟</string>
+    <string name="alarm_dialog_body">闹钟最多会响 5 分钟。</string>
+    <string name="alarm_snooze_10">10 分钟后再响</string>
+    <string name="alarm_dismiss">关闭闹钟</string>
+    <string name="alarm_snoozed_message">已设置 10 分钟后再次提醒。</string>
+    <string name="alarm_dismissed_message">闹钟已关闭。</string>
     <string name="weather_sunny">晴天</string>
     <string name="weather_cloudy">多云</string>
     <string name="weather_fog">雾天</string>

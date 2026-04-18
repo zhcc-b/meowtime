@@ -55,6 +55,9 @@
     <string name="mode_focus_minutes">Focus %1$d min</string>
     <string name="mode_break_minutes">Break %1$d min</string>
     <string name="mode_countdown_minutes">Countdown %1$d min</string>
+    <string name="mode_focus_duration">Focus minutes</string>
+    <string name="mode_break_duration">Break minutes</string>
+    <string name="mode_countdown_duration">Countdown minutes</string>
     <string name="mode_stopwatch_stats">Elapsed %1$s</string>
     <string name="mode_clock_hint">Theme presets shape the large ambient clock.</string>
     <string name="current_remaining">Current: %1$s Remaining</string>
@@ -70,7 +73,14 @@
     <string name="companion_timer_started">Timer started. Cat is on duty.</string>
     <string name="companion_timer_paused">Timer paused. Cat is waiting.</string>
     <string name="reminder_hourly_chime">%1$s o’clock check-in.</string>
-    <string name="reminder_alarm_now">Alarm time. Cat is calling you back.</string>
+    <string name="reminder_alarm_now">Alarm time.</string>
+    <string name="alarm_enabled_hint">Alarm on</string>
+    <string name="alarm_dialog_title">Alarm</string>
+    <string name="alarm_dialog_body">The alarm will ring for up to 5 minutes.</string>
+    <string name="alarm_snooze_10">Snooze 10 min</string>
+    <string name="alarm_dismiss">Turn Off</string>
+    <string name="alarm_snoozed_message">Alarm snoozed for 10 minutes.</string>
+    <string name="alarm_dismissed_message">Alarm turned off.</string>
     <string name="weather_sunny">Sunny</string>
     <string name="weather_cloudy">Cloudy</string>
     <string name="weather_fog">Fog</string>

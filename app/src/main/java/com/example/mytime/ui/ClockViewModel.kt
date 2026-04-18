@@ -94,6 +94,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private var mediaPlayer: MediaPlayer? = null
     private var loudnessEnhancer: LoudnessEnhancer? = null
     private val whiteNoisePlayer = WhiteNoisePlayer()
+    private val alarmTonePlayer = AlarmTonePlayer()
     private val appContext: Context
         get() = getApplication<Application>().applicationContext
     private val sensorManager = application.applicationContext.getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -111,6 +112,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private var tickerJob: Job? = null
     private var edgeLightJob: Job? = null
     private var sleepSoundJob: Job? = null
+    private var dailyAlarmJob: Job? = null
+    private var dailyAlarmSnoozeJob: Job? = null
     private var sleepSoundEndsAtElapsedMs: Long = 0L
     private var sensorRegistered = false
     private var isAppActive = false
@@ -265,6 +268,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                 }
 
                 var shouldPlayReminder = false
+                var shouldStartDailyAlarm = false
                 var reminderCue = ReminderCue.DEFAULT
                 var edgeLightMode: EdgeLightMode? = null
                 var edgeLightDurationMs: Long? = null
@@ -322,13 +326,14 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                     }
                     if (
                         workingState.dailyAlarmEnabled &&
+                        !workingState.isDailyAlarmRinging &&
                         hour24 == workingState.dailyAlarmHour &&
                         currentMinute == workingState.dailyAlarmMinute &&
                         second == 0 &&
                         dailyMarker != lastDailyAlarmMarker
                     ) {
                         lastDailyAlarmMarker = dailyMarker
-                        shouldPlayReminder = true
+                        shouldStartDailyAlarm = true
                         companionMessage = appContext.getString(R.string.reminder_alarm_now)
                     }
 
@@ -350,6 +355,9 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                 }
                 if (shouldPlayReminder) {
                     playReminderCue(reminderCue)
+                }
+                if (shouldStartDailyAlarm) {
+                    startDailyAlarm()
                 }
                 if (edgeLightMode != null) {
                     showEdgeLight(edgeLightMode!!, edgeLightDurationMs)
@@ -610,6 +618,29 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
             tone.startTone(ToneGenerator.TONE_PROP_BEEP2, 260)
         }
         tone.release()
+    }
+
+    private fun startDailyAlarm() {
+        dailyAlarmJob?.cancel()
+        alarmTonePlayer.start()
+        showEdgeLight(EdgeLightMode.TIMER_ALERT, DAILY_ALARM_RING_MS)
+        _uiState.update {
+            it.copy(
+                isDailyAlarmRinging = true,
+                companionMessage = appContext.getString(R.string.reminder_alarm_now)
+            )
+        }
+        dailyAlarmJob = viewModelScope.launch {
+            delay(DAILY_ALARM_RING_MS)
+            stopDailyAlarmSound()
+            _uiState.update { it.copy(isDailyAlarmRinging = false) }
+        }
+    }
+
+    private fun stopDailyAlarmSound() {
+        dailyAlarmJob?.cancel()
+        dailyAlarmJob = null
+        alarmTonePlayer.stop()
     }
 
     fun fetchLocation(hasLocationPermission: Boolean) {
@@ -882,6 +913,50 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         persistSetting { this[PreferenceKeys.countdownDurationMinutes] = _uiState.value.countdownDurationMinutes }
     }
 
+    fun setPomodoroFocusMinutes(minutes: Int) {
+        val next = minutes.coerceIn(5, 90)
+        if (_uiState.value.pomodoroFocusMinutes == next) return
+        _uiState.update { state ->
+            state.copy(
+                pomodoroFocusMinutes = next,
+                pomodoroRemainingSeconds = if (!state.timerRunning && state.pomodoroPhase == PomodoroPhase.FOCUS) {
+                    next * 60
+                } else {
+                    state.pomodoroRemainingSeconds
+                }
+            )
+        }
+        persistSetting { this[PreferenceKeys.pomodoroFocusMinutes] = next }
+    }
+
+    fun setPomodoroBreakMinutes(minutes: Int) {
+        val next = minutes.coerceIn(1, 30)
+        if (_uiState.value.pomodoroBreakMinutes == next) return
+        _uiState.update { state ->
+            state.copy(
+                pomodoroBreakMinutes = next,
+                pomodoroRemainingSeconds = if (!state.timerRunning && state.pomodoroPhase == PomodoroPhase.BREAK) {
+                    next * 60
+                } else {
+                    state.pomodoroRemainingSeconds
+                }
+            )
+        }
+        persistSetting { this[PreferenceKeys.pomodoroBreakMinutes] = next }
+    }
+
+    fun setCountdownDurationMinutes(minutes: Int) {
+        val next = minutes.coerceIn(1, 180)
+        if (_uiState.value.countdownDurationMinutes == next) return
+        _uiState.update { state ->
+            state.copy(
+                countdownDurationMinutes = next,
+                countdownRemainingSeconds = if (!state.timerRunning) next * 60 else state.countdownRemainingSeconds
+            )
+        }
+        persistSetting { this[PreferenceKeys.countdownDurationMinutes] = next }
+    }
+
     fun toggleParallax(enabled: Boolean) {
         if (!enabled) {
             basePitch = null
@@ -954,6 +1029,11 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
 
     fun toggleDailyAlarm(enabled: Boolean) {
         _uiState.update { it.copy(dailyAlarmEnabled = enabled) }
+        if (!enabled) {
+            dismissDailyAlarm()
+            dailyAlarmSnoozeJob?.cancel()
+            dailyAlarmSnoozeJob = null
+        }
         persistSetting { this[PreferenceKeys.dailyAlarmEnabled] = enabled }
     }
 
@@ -983,6 +1063,35 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         if (_uiState.value.dailyAlarmMinute == normalizedMinute) return
         _uiState.update { it.copy(dailyAlarmMinute = normalizedMinute) }
         persistSetting { this[PreferenceKeys.dailyAlarmMinute] = normalizedMinute }
+    }
+
+    fun snoozeDailyAlarm() {
+        stopDailyAlarmSound()
+        _uiState.update {
+            it.copy(
+                isDailyAlarmRinging = false,
+                companionMessage = appContext.getString(R.string.alarm_snoozed_message)
+            )
+        }
+        dailyAlarmSnoozeJob?.cancel()
+        dailyAlarmSnoozeJob = viewModelScope.launch {
+            delay(DAILY_ALARM_SNOOZE_MS)
+            if (_uiState.value.dailyAlarmEnabled) {
+                startDailyAlarm()
+            }
+        }
+    }
+
+    fun dismissDailyAlarm() {
+        dailyAlarmSnoozeJob?.cancel()
+        dailyAlarmSnoozeJob = null
+        stopDailyAlarmSound()
+        _uiState.update {
+            it.copy(
+                isDailyAlarmRinging = false,
+                companionMessage = appContext.getString(R.string.alarm_dismissed_message)
+            )
+        }
     }
 
     fun toggleBreakReminder(enabled: Boolean) {
@@ -1172,6 +1281,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     override fun onCleared() {
         edgeLightJob?.cancel()
         sleepSoundJob?.cancel()
+        dailyAlarmJob?.cancel()
+        dailyAlarmSnoozeJob?.cancel()
         stopClockTicker()
         unregisterRotationSensor()
         runCatching { appContext.unregisterReceiver(batteryReceiver) }
@@ -1179,6 +1290,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         mediaPlayer?.release()
         loudnessEnhancer?.release()
         whiteNoisePlayer.stop()
+        alarmTonePlayer.stop()
         mediaPlayer = null
         loudnessEnhancer = null
         super.onCleared()
@@ -1186,6 +1298,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
 }
 
 private const val SLEEP_SOUND_DURATION_MS = 60L * 60L * 1000L
+private const val DAILY_ALARM_RING_MS = 5L * 60L * 1000L
+private const val DAILY_ALARM_SNOOZE_MS = 10L * 60L * 1000L
 
 private fun Offset.sanitize(): Offset = Offset(
     x = x.takeIf { it.isFinite() } ?: 0f,

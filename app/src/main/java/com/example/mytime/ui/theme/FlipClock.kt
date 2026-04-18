@@ -96,13 +96,15 @@ fun FlipClockScreen(
     onSetClockMode: (ClockMode) -> Unit,
     onToggleModeRunning: () -> Unit,
     onResetMode: () -> Unit,
-    onAdjustPomodoroFocus: (Int) -> Unit,
-    onAdjustPomodoroBreak: (Int) -> Unit,
-    onAdjustCountdown: (Int) -> Unit,
+    onSetPomodoroFocus: (Int) -> Unit,
+    onSetPomodoroBreak: (Int) -> Unit,
+    onSetCountdown: (Int) -> Unit,
     onToggleHourlyChime: (Boolean) -> Unit,
     onToggleDailyAlarm: (Boolean) -> Unit,
     onSetDailyAlarmHour: (Int) -> Unit,
     onSetDailyAlarmMinute: (Int) -> Unit,
+    onSnoozeDailyAlarm: () -> Unit,
+    onDismissDailyAlarm: () -> Unit,
     onToggleBreakReminder: (Boolean) -> Unit,
     onSetThemePreset: (ThemePreset) -> Unit,
     onToggleThemeEdgeLight: (Boolean) -> Unit,
@@ -202,13 +204,25 @@ fun FlipClockScreen(
             onSetClockMode = onSetClockMode,
             onToggleModeRunning = onToggleModeRunning,
             onResetMode = onResetMode,
-            onAdjustPomodoroFocus = onAdjustPomodoroFocus,
-            onAdjustPomodoroBreak = onAdjustPomodoroBreak,
-            onAdjustCountdown = onAdjustCountdown,
+            onSetPomodoroFocus = onSetPomodoroFocus,
+            onSetPomodoroBreak = onSetPomodoroBreak,
+            onSetCountdown = onSetCountdown,
             mainDisplayModifier = mainDisplayTransform,
             onTimeBoundsChanged = { timeRect = it },
             modifier = Modifier.alpha(settingsDim)
         )
+
+        if (state.dailyAlarmEnabled && !state.isSettingsVisible) {
+            DailyAlarmHint(
+                state = state,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(
+                        end = 18.dp,
+                        bottom = if (state.clockMode == ClockMode.CLOCK) 18.dp else 116.dp
+                    )
+            )
+        }
 
         SettingsMenu(
             visible = state.isSettingsVisible,
@@ -262,6 +276,14 @@ fun FlipClockScreen(
             ExplanationOverlay(
                 info = info,
                 onDismiss = { overlayInfo = null }
+            )
+        }
+
+        if (state.isDailyAlarmRinging) {
+            DailyAlarmDialog(
+                state = state,
+                onSnooze = onSnoozeDailyAlarm,
+                onDismiss = onDismissDailyAlarm
             )
         }
     }
@@ -2021,9 +2043,9 @@ private fun ClockContent(
     onSetClockMode: (ClockMode) -> Unit,
     onToggleModeRunning: () -> Unit,
     onResetMode: () -> Unit,
-    onAdjustPomodoroFocus: (Int) -> Unit,
-    onAdjustPomodoroBreak: (Int) -> Unit,
-    onAdjustCountdown: (Int) -> Unit,
+    onSetPomodoroFocus: (Int) -> Unit,
+    onSetPomodoroBreak: (Int) -> Unit,
+    onSetCountdown: (Int) -> Unit,
     mainDisplayModifier: Modifier = Modifier,
     onTimeBoundsChanged: (RectF) -> Unit,
     modifier: Modifier = Modifier
@@ -2067,9 +2089,9 @@ private fun ClockContent(
                 onSetClockMode = onSetClockMode,
                 onToggleModeRunning = onToggleModeRunning,
                 onResetMode = onResetMode,
-                onAdjustPomodoroFocus = onAdjustPomodoroFocus,
-                onAdjustPomodoroBreak = onAdjustPomodoroBreak,
-                onAdjustCountdown = onAdjustCountdown,
+                onSetPomodoroFocus = onSetPomodoroFocus,
+                onSetPomodoroBreak = onSetPomodoroBreak,
+                onSetCountdown = onSetCountdown,
                 onPlayAudio = onPlayAudio
             )
             return@Box
@@ -2098,9 +2120,9 @@ private fun ClockContent(
             onSetClockMode = onSetClockMode,
             onToggleModeRunning = onToggleModeRunning,
             onResetMode = onResetMode,
-            onAdjustPomodoroFocus = onAdjustPomodoroFocus,
-            onAdjustPomodoroBreak = onAdjustPomodoroBreak,
-            onAdjustCountdown = onAdjustCountdown
+            onSetPomodoroFocus = onSetPomodoroFocus,
+            onSetPomodoroBreak = onSetPomodoroBreak,
+            onSetCountdown = onSetCountdown
         )
     }
 }
@@ -2146,9 +2168,9 @@ private fun PortraitClockContent(
     onSetClockMode: (ClockMode) -> Unit,
     onToggleModeRunning: () -> Unit,
     onResetMode: () -> Unit,
-    onAdjustPomodoroFocus: (Int) -> Unit,
-    onAdjustPomodoroBreak: (Int) -> Unit,
-    onAdjustCountdown: (Int) -> Unit
+    onSetPomodoroFocus: (Int) -> Unit,
+    onSetPomodoroBreak: (Int) -> Unit,
+    onSetCountdown: (Int) -> Unit
 ) {
     var controlsCollapsed by remember(state.clockMode) { mutableStateOf(false) }
     val portraitMainSize = baseFontSize * if (isCompactPortrait) 0.98f else 1.06f
@@ -2250,9 +2272,9 @@ private fun PortraitClockContent(
                     state = state,
                     onToggleModeRunning = onToggleModeRunning,
                     onResetMode = onResetMode,
-                    onAdjustPomodoroFocus = onAdjustPomodoroFocus,
-                    onAdjustPomodoroBreak = onAdjustPomodoroBreak,
-                    onAdjustCountdown = onAdjustCountdown,
+                    onSetPomodoroFocus = onSetPomodoroFocus,
+                    onSetPomodoroBreak = onSetPomodoroBreak,
+                    onSetCountdown = onSetCountdown,
                     compact = true,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -2414,9 +2436,9 @@ private fun LandscapeClockContent(
     onSetClockMode: (ClockMode) -> Unit,
     onToggleModeRunning: () -> Unit,
     onResetMode: () -> Unit,
-    onAdjustPomodoroFocus: (Int) -> Unit,
-    onAdjustPomodoroBreak: (Int) -> Unit,
-    onAdjustCountdown: (Int) -> Unit,
+    onSetPomodoroFocus: (Int) -> Unit,
+    onSetPomodoroBreak: (Int) -> Unit,
+    onSetCountdown: (Int) -> Unit,
     onPlayAudio: () -> Unit
 ) {
     var transientModeLabel by remember { mutableStateOf<String?>(null) }
@@ -2510,9 +2532,9 @@ private fun LandscapeClockContent(
                     state = state,
                     onToggleModeRunning = onToggleModeRunning,
                     onResetMode = onResetMode,
-                    onAdjustPomodoroFocus = onAdjustPomodoroFocus,
-                    onAdjustPomodoroBreak = onAdjustPomodoroBreak,
-                    onAdjustCountdown = onAdjustCountdown,
+                    onSetPomodoroFocus = onSetPomodoroFocus,
+                    onSetPomodoroBreak = onSetPomodoroBreak,
+                    onSetCountdown = onSetCountdown,
                     compact = true,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
@@ -2579,9 +2601,9 @@ private fun ModeSidebarRail(
     onSetClockMode: (ClockMode) -> Unit,
     onToggleModeRunning: () -> Unit,
     onResetMode: () -> Unit,
-    onAdjustPomodoroFocus: (Int) -> Unit,
-    onAdjustPomodoroBreak: (Int) -> Unit,
-    onAdjustCountdown: (Int) -> Unit,
+    onSetPomodoroFocus: (Int) -> Unit,
+    onSetPomodoroBreak: (Int) -> Unit,
+    onSetCountdown: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -2619,6 +2641,102 @@ private fun ThemePresetPill(label: String, modifier: Modifier = Modifier) {
             fontFamily = UiFontFamily,
             fontSize = 11.sp
         )
+    }
+}
+
+@Composable
+private fun DailyAlarmHint(state: ClockState, modifier: Modifier = Modifier) {
+    SettingsCardSurface(
+        shape = RoundedCornerShape(20.dp),
+        padding = PaddingValues(horizontal = 14.dp, vertical = 9.dp),
+        modifier = modifier
+    ) {
+        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = stringResource(id = R.string.alarm_enabled_hint),
+                color = LiquidGlassText.copy(alpha = 0.62f),
+                fontSize = 10.sp,
+                fontFamily = UiFontFamily
+            )
+            Text(
+                text = "%02d:%02d".format(state.dailyAlarmHour, state.dailyAlarmMinute),
+                color = LiquidGlassText.copy(alpha = 0.92f),
+                fontSize = 15.sp,
+                fontFamily = UiFontFamily,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+@Composable
+private fun DailyAlarmDialog(
+    state: ClockState,
+    onSnooze: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF06111D).copy(alpha = 0.72f)),
+        contentAlignment = Alignment.Center
+    ) {
+        SettingsCardSurface(
+            shape = RoundedCornerShape(32.dp),
+            padding = PaddingValues(horizontal = 24.dp, vertical = 22.dp),
+            modifier = Modifier
+                .fillMaxWidth(0.82f)
+                .widthIn(max = 420.dp)
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = stringResource(id = R.string.alarm_dialog_title),
+                    color = LiquidGlassText,
+                    fontSize = 24.sp,
+                    fontFamily = UiFontFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = "%02d:%02d".format(state.dailyAlarmHour, state.dailyAlarmMinute),
+                    color = LiquidGlassText.copy(alpha = 0.90f),
+                    fontSize = 34.sp,
+                    fontFamily = UiFontFamily,
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = stringResource(id = R.string.alarm_dialog_body),
+                    color = LiquidGlassText.copy(alpha = 0.60f),
+                    fontSize = 13.sp,
+                    fontFamily = UiFontFamily,
+                    textAlign = TextAlign.Center
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SettingsChip(selected = false, onClick = onSnooze) {
+                        Text(
+                            text = stringResource(id = R.string.alarm_snooze_10),
+                            color = LiquidGlassText,
+                            fontFamily = UiFontFamily,
+                            fontSize = 13.sp
+                        )
+                    }
+                    SettingsChip(selected = true, onClick = onDismiss) {
+                        Text(
+                            text = stringResource(id = R.string.alarm_dismiss),
+                            color = LiquidGlassText,
+                            fontFamily = UiFontFamily,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -2800,9 +2918,9 @@ private fun ModeControlPanel(
     state: ClockState,
     onToggleModeRunning: () -> Unit,
     onResetMode: () -> Unit,
-    onAdjustPomodoroFocus: (Int) -> Unit,
-    onAdjustPomodoroBreak: (Int) -> Unit,
-    onAdjustCountdown: (Int) -> Unit,
+    onSetPomodoroFocus: (Int) -> Unit,
+    onSetPomodoroBreak: (Int) -> Unit,
+    onSetCountdown: (Int) -> Unit,
     compact: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -2846,25 +2964,25 @@ private fun ModeControlPanel(
             }
             when (state.clockMode) {
                 ClockMode.POMODORO -> {
-                    ModeAdjustRow(
-                        label = stringResource(id = R.string.mode_focus_minutes, state.pomodoroFocusMinutes),
-                        onMinus = { onAdjustPomodoroFocus(-5) },
-                        onPlus = { onAdjustPomodoroFocus(5) },
-                        compact = compact
+                    TimerWheelSettingRow(
+                        label = stringResource(id = R.string.mode_focus_duration),
+                        value = state.pomodoroFocusMinutes,
+                        values = (5..90).toList(),
+                        onSelected = onSetPomodoroFocus
                     )
-                    ModeAdjustRow(
-                        label = stringResource(id = R.string.mode_break_minutes, state.pomodoroBreakMinutes),
-                        onMinus = { onAdjustPomodoroBreak(-1) },
-                        onPlus = { onAdjustPomodoroBreak(1) },
-                        compact = compact
+                    TimerWheelSettingRow(
+                        label = stringResource(id = R.string.mode_break_duration),
+                        value = state.pomodoroBreakMinutes,
+                        values = (1..30).toList(),
+                        onSelected = onSetPomodoroBreak
                     )
                 }
                 ClockMode.COUNTDOWN -> {
-                    ModeAdjustRow(
-                        label = stringResource(id = R.string.mode_countdown_minutes, state.countdownDurationMinutes),
-                        onMinus = { onAdjustCountdown(-1) },
-                        onPlus = { onAdjustCountdown(1) },
-                        compact = compact
+                    TimerWheelSettingRow(
+                        label = stringResource(id = R.string.mode_countdown_duration),
+                        value = state.countdownDurationMinutes,
+                        values = (1..180).toList(),
+                        onSelected = onSetCountdown
                     )
                 }
                 ClockMode.STOPWATCH -> {
@@ -2889,32 +3007,34 @@ private fun ModeControlPanel(
 }
 
 @Composable
-private fun ModeAdjustRow(label: String, onMinus: () -> Unit, onPlus: () -> Unit, compact: Boolean = false) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
+private fun TimerWheelSettingRow(
+    label: String,
+    value: Int,
+    values: List<Int>,
+    onSelected: (Int) -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        TinyActionChip(text = "-", onClick = onMinus, compact = compact)
         Text(
             text = label,
-            color = LiquidGlassText.copy(alpha = 0.82f),
+            color = LiquidGlassText.copy(alpha = 0.66f),
             fontFamily = UiFontFamily,
-            fontSize = if (compact) 11.sp else 12.sp
+            fontSize = 11.sp
         )
-        TinyActionChip(text = "+", onClick = onPlus, compact = compact)
-    }
-}
-
-@Composable
-private fun TinyActionChip(text: String, onClick: () -> Unit, compact: Boolean = false) {
-    SettingsChip(selected = false, onClick = onClick) {
-        Text(
-            text = text,
-            color = LiquidGlassText,
-            fontFamily = UiFontFamily,
-            fontSize = if (compact) 12.sp else 14.sp,
-            fontWeight = FontWeight.SemiBold
-        )
+        Row(
+            modifier = Modifier.height(128.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TimeWheelColumn(
+                values = values,
+                selected = value,
+                labelFormatter = { it.toString().padStart(2, '0') },
+                onSelected = onSelected
+            )
+        }
     }
 }
 
