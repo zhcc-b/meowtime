@@ -58,7 +58,6 @@ private val Context.dataStore by preferencesDataStore(name = "clock_settings")
 
 private object PreferenceKeys {
     val burnIn = booleanPreferencesKey("burn_in")
-    val soundButton = booleanPreferencesKey("sound_button")
     val parallax = booleanPreferencesKey("parallax")
     val particles = booleanPreferencesKey("particles")
     val cats = booleanPreferencesKey("cats")
@@ -74,9 +73,7 @@ private object PreferenceKeys {
     val dailyAlarmEnabled = booleanPreferencesKey("daily_alarm_enabled")
     val dailyAlarmHour = intPreferencesKey("daily_alarm_hour")
     val dailyAlarmMinute = intPreferencesKey("daily_alarm_minute")
-    val breakReminder = booleanPreferencesKey("break_reminder")
     val themePreset = stringPreferencesKey("theme_preset")
-    val themeEdgeLight = booleanPreferencesKey("theme_edge_light")
     val sleepSoundMode = stringPreferencesKey("sleep_sound_mode")
     val whiteNoise = booleanPreferencesKey("white_noise")
 }
@@ -160,7 +157,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         .getOrDefault(SleepSoundMode.RAIN)
                     state.copy(
                         isBurnInProtectionEnabled = preferences[PreferenceKeys.burnIn] ?: state.isBurnInProtectionEnabled,
-                        isSoundButtonVisible = preferences[PreferenceKeys.soundButton] ?: state.isSoundButtonVisible,
                         isParallaxEnabled = preferences[PreferenceKeys.parallax] ?: state.isParallaxEnabled,
                         isParticleSystemEnabled = preferences[PreferenceKeys.particles] ?: state.isParticleSystemEnabled,
                         isParticleWeatherAuto = manualWeather == null,
@@ -187,9 +183,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         dailyAlarmEnabled = preferences[PreferenceKeys.dailyAlarmEnabled] ?: state.dailyAlarmEnabled,
                         dailyAlarmHour = preferences[PreferenceKeys.dailyAlarmHour] ?: state.dailyAlarmHour,
                         dailyAlarmMinute = preferences[PreferenceKeys.dailyAlarmMinute] ?: state.dailyAlarmMinute,
-                        breakReminderEnabled = preferences[PreferenceKeys.breakReminder] ?: state.breakReminderEnabled,
                         selectedThemePreset = preset,
-                        isThemeEdgeLightEnabled = preferences[PreferenceKeys.themeEdgeLight] ?: state.isThemeEdgeLightEnabled,
                         sleepSoundMode = sleepMode,
                         whiteNoiseEnabled = preferences[PreferenceKeys.whiteNoise] ?: state.whiteNoiseEnabled
                     )
@@ -570,7 +564,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
             }
             ClockMode.STOPWATCH -> {
                 val nextElapsed = state.stopwatchElapsedSeconds + 1
-                val needsBreakNudge = state.breakReminderEnabled && nextElapsed > 0 && nextElapsed % (45 * 60) == 0
+                val needsBreakNudge = nextElapsed > 0 && nextElapsed % (30 * 60) == 0
                 ModeTickResult(
                     state.copy(stopwatchElapsedSeconds = nextElapsed),
                     message = if (needsBreakNudge) appContext.getString(R.string.companion_break_nudge) else null,
@@ -787,11 +781,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
             )
         }
         persistSetting { this[PreferenceKeys.burnIn] = enabled }
-    }
-
-    fun toggleSound(visible: Boolean) {
-        _uiState.update { it.copy(isSoundButtonVisible = visible) }
-        persistSetting { this[PreferenceKeys.soundButton] = visible }
     }
 
     fun setFont(font: ClockFont) {
@@ -1094,11 +1083,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         }
     }
 
-    fun toggleBreakReminder(enabled: Boolean) {
-        _uiState.update { it.copy(breakReminderEnabled = enabled) }
-        persistSetting { this[PreferenceKeys.breakReminder] = enabled }
-    }
-
     fun setThemePreset(preset: ThemePreset) {
         _uiState.update { state ->
             applyThemePresetProfile(
@@ -1107,11 +1091,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
             )
         }
         persistSetting { this[PreferenceKeys.themePreset] = preset.name }
-    }
-
-    fun toggleThemeEdgeLight(enabled: Boolean) {
-        _uiState.update { it.copy(isThemeEdgeLightEnabled = enabled) }
-        persistSetting { this[PreferenceKeys.themeEdgeLight] = enabled }
     }
 
     private fun showEdgeLight(mode: EdgeLightMode, durationMs: Long? = null) {

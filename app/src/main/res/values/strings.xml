@@ -10,7 +10,6 @@
     <string name="settings_wallpaper">Auto Wallpaper</string>
     <string name="settings_burnin">Burn-in Protection</string>
     <string name="settings_24_hour">24-Hour Format</string>
-    <string name="settings_sound_button">Sound Button</string>
     <string name="settings_white_noise">Sleep Sound</string>
     <string name="settings_sleep_sound">Sleep Sound</string>
     <string name="settings_sleep_sound_with_timer">Sleep Sound · %1$s</string>
@@ -23,10 +22,8 @@
     <string name="settings_hourly_chime">Hourly Chime</string>
     <string name="settings_daily_alarm">Daily Alarm</string>
     <string name="settings_alarm_time">Alarm Time</string>
-    <string name="settings_break_reminder">Break Reminder</string>
     <string name="settings_theme_preset">Theme Preset</string>
     <string name="settings_theme_active">Active: %1$s</string>
-    <string name="settings_theme_edge_light">Theme Edge Light</string>
     <string name="tap_anywhere_to_close">Tap anywhere to close</string>
     <string name="current_preset_label">Current Theme: %1$s</string>
     <string name="current_preset_compact">%1$s</string>
@@ -43,8 +40,6 @@
     <string name="theme_info_playful">Playful leans brighter and more animated, with more personality in the ambient background and companion layer.</string>
     <string name="theme_info_serene">Serene is the balanced ambient mode: calm, readable, and soft without feeling too quiet.</string>
     <string name="theme_info_night">Night dims the scene, reduces visual pressure, and keeps the clock feeling quieter for late hours.</string>
-    <string name="break_reminder_info_on">Break reminders stay silent now. Instead, a soft edge marquee runs around the screen for 10 seconds when it is time to step back.</string>
-    <string name="break_reminder_info_off">Break reminders are off. Stopwatch nudges and other long-session rest prompts will stay quiet until you turn this back on.</string>
     <string name="mode_clock">Clock</string>
     <string name="mode_pomodoro">Pomodoro</string>
     <string name="mode_countdown">Countdown</string>
@@ -75,9 +70,11 @@
     <string name="reminder_hourly_chime">%1$s o’clock check-in.</string>
     <string name="reminder_alarm_now">Alarm time.</string>
     <string name="alarm_enabled_hint">Alarm on</string>
+    <string name="alarm_next_in">in %1$s</string>
     <string name="alarm_dialog_title">Alarm</string>
     <string name="alarm_dialog_body">The alarm will ring for up to 5 minutes.</string>
-    <string name="alarm_snooze_10">Snooze 10 min</string>
+    <string name="alarm_snooze_title">Snooze</string>
+    <string name="alarm_snooze_subtitle">10 minutes</string>
     <string name="alarm_dismiss">Turn Off</string>
     <string name="alarm_snoozed_message">Alarm snoozed for 10 minutes.</string>
     <string name="alarm_dismissed_message">Alarm turned off.</string>

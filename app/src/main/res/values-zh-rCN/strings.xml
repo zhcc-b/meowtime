@@ -10,7 +10,6 @@
     <string name="settings_wallpaper">自动壁纸</string>
     <string name="settings_burnin">防烧屏</string>
     <string name="settings_24_hour">24 小时制</string>
-    <string name="settings_sound_button">声音按钮</string>
     <string name="settings_white_noise">睡眠声音</string>
     <string name="settings_sleep_sound">睡眠声音</string>
     <string name="settings_sleep_sound_with_timer">睡眠声音 · %1$s</string>
@@ -23,10 +22,8 @@
     <string name="settings_hourly_chime">整点报时</string>
     <string name="settings_daily_alarm">每日闹钟</string>
     <string name="settings_alarm_time">闹钟时间</string>
-    <string name="settings_break_reminder">休息提醒</string>
     <string name="settings_theme_preset">主题预设</string>
     <string name="settings_theme_active">当前生效：%1$s</string>
-    <string name="settings_theme_edge_light">主题边框光</string>
     <string name="tap_anywhere_to_close">点击任意处关闭</string>
     <string name="current_preset_label">当前主题：%1$s</string>
     <string name="current_preset_compact">%1$s</string>
@@ -43,8 +40,6 @@
     <string name="theme_info_playful">活力会让背景和陪伴层更灵动，整体更明快，也更有玩味感。</string>
     <string name="theme_info_serene">宁静是最均衡的环境时钟模式：平静、清晰、柔和，不会太闹也不会太空。</string>
     <string name="theme_info_night">夜间会整体压暗、降低刺激感，让屏幕在深夜看起来更安静。</string>
-    <string name="break_reminder_info_on">休息提醒现在不会发声，而是会在需要休息时用屏幕四周的柔和跑马灯提醒 10 秒。</string>
-    <string name="break_reminder_info_off">休息提醒已关闭。正计时中的久坐提醒和长时段休息提示都会暂时安静下来。</string>
     <string name="mode_clock">时钟</string>
     <string name="mode_pomodoro">番茄钟</string>
     <string name="mode_countdown">倒计时</string>
@@ -75,9 +70,11 @@
     <string name="reminder_hourly_chime">%1$s 整，做个整点检查。</string>
     <string name="reminder_alarm_now">闹钟时间到了。</string>
     <string name="alarm_enabled_hint">闹钟已开启</string>
+    <string name="alarm_next_in">%1$s 后响</string>
     <string name="alarm_dialog_title">闹钟</string>
     <string name="alarm_dialog_body">闹钟最多会响 5 分钟。</string>
-    <string name="alarm_snooze_10">10 分钟后再响</string>
+    <string name="alarm_snooze_title">稍后提醒</string>
+    <string name="alarm_snooze_subtitle">10 分钟</string>
     <string name="alarm_dismiss">关闭闹钟</string>
     <string name="alarm_snoozed_message">已设置 10 分钟后再次提醒。</string>
     <string name="alarm_dismissed_message">闹钟已关闭。</string>

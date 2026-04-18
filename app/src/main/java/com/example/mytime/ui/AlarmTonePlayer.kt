@@ -70,7 +70,7 @@ class AlarmTonePlayer {
             val cursor = startSample + i
             val elapsedSec = cursor / sampleRate.toFloat()
             val phaseSec = (cursor % cycleSamples) / sampleRate.toFloat()
-            val ramp = (elapsedSec / 45f).coerceIn(0.18f, 1f)
+            val ramp = (elapsedSec / 28f).coerceIn(0.36f, 1f)
             val sample = when {
                 phaseSec < 0.46f -> bellTone(phaseSec, 523.25f, sampleRate, cursor, 0.46f)
                 phaseSec in 0.66f..1.12f -> bellTone(phaseSec - 0.66f, 659.25f, sampleRate, cursor, 0.46f)
@@ -78,7 +78,7 @@ class AlarmTonePlayer {
                 phaseSec in 2.12f..2.42f -> bellTone(phaseSec - 2.12f, 659.25f, sampleRate, cursor, 0.30f) * 0.62f
                 else -> 0f
             } * ramp
-            buffer[i] = (sample.coerceIn(-0.28f, 0.28f) * Short.MAX_VALUE).toInt().toShort()
+            buffer[i] = (sample.coerceIn(-0.45f, 0.45f) * Short.MAX_VALUE).toInt().toShort()
         }
     }
 
@@ -90,6 +90,6 @@ class AlarmTonePlayer {
         val fundamental = sin(2f * PI.toFloat() * frequency * t)
         val overtone = sin(2f * PI.toFloat() * frequency * 2.01f * t) * 0.22f
         val shimmer = sin(2f * PI.toFloat() * frequency * 3.02f * t) * 0.08f
-        return (fundamental + overtone + shimmer) * envelope * 0.30f
+        return (fundamental + overtone + shimmer) * envelope * 0.46f
     }
 }

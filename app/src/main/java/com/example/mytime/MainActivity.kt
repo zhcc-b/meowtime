@@ -155,7 +155,6 @@ class MainActivity : ComponentActivity() {
                         onOpenSettings = { viewModel.openSettings() },
                         onCloseSettings = { viewModel.closeSettings() },
                         onToggleBurnIn = { viewModel.toggleBurnIn(it) },
-                        onToggleSound = { viewModel.toggleSound(it) },
                         onSelectFont = { viewModel.setFont(it) },
                         onToggleParallax = { viewModel.toggleParallax(it) },
                         onToggleParticles = { viewModel.toggleParticles(it) },
@@ -176,9 +175,7 @@ class MainActivity : ComponentActivity() {
                         onSetDailyAlarmMinute = { viewModel.setDailyAlarmMinute(it) },
                         onSnoozeDailyAlarm = { viewModel.snoozeDailyAlarm() },
                         onDismissDailyAlarm = { viewModel.dismissDailyAlarm() },
-                        onToggleBreakReminder = { viewModel.toggleBreakReminder(it) },
                         onSetThemePreset = { preset: ThemePreset -> viewModel.setThemePreset(preset) },
-                        onToggleThemeEdgeLight = { viewModel.toggleThemeEdgeLight(it) },
                         onSelectSleepSound = { mode: SleepSoundMode -> viewModel.setSleepSoundMode(mode) },
                         onToggleWhiteNoise = { viewModel.toggleWhiteNoise(it) }
                     )

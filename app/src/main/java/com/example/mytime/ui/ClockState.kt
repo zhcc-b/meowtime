@@ -57,13 +57,11 @@ data class ClockState(
     val dailyAlarmHour: Int = 8,
     val dailyAlarmMinute: Int = 0,
     val isDailyAlarmRinging: Boolean = false,
-    val breakReminderEnabled: Boolean = true,
     val companionMessage: String = "",
 
     // 主题与环境
     val selectedThemePreset: ThemePreset = ThemePreset.AUTO,
     val activeThemePreset: ThemePreset = ThemePreset.SERENE,
-    val isThemeEdgeLightEnabled: Boolean = true,
     val whiteNoiseEnabled: Boolean = false,
     val sleepSoundMode: SleepSoundMode = SleepSoundMode.RAIN,
     val sleepSoundRemainingSeconds: Int = 0,

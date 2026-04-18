@@ -35,10 +35,12 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
@@ -84,7 +86,6 @@ fun FlipClockScreen(
     onOpenSettings: () -> Unit,
     onCloseSettings: () -> Unit,
     onToggleBurnIn: (Boolean) -> Unit,
-    onToggleSound: (Boolean) -> Unit,
     onSelectFont: (ClockFont) -> Unit,
     onToggleParallax: (Boolean) -> Unit,
     onToggleParticles: (Boolean) -> Unit,
@@ -105,9 +106,7 @@ fun FlipClockScreen(
     onSetDailyAlarmMinute: (Int) -> Unit,
     onSnoozeDailyAlarm: () -> Unit,
     onDismissDailyAlarm: () -> Unit,
-    onToggleBreakReminder: (Boolean) -> Unit,
     onSetThemePreset: (ThemePreset) -> Unit,
-    onToggleThemeEdgeLight: (Boolean) -> Unit,
     onSelectSleepSound: (SleepSoundMode) -> Unit,
     onToggleWhiteNoise: (Boolean) -> Unit
 ) {
@@ -117,14 +116,11 @@ fun FlipClockScreen(
     val settingsDim = if (state.isSettingsVisible) 0.34f else 1f
     val safeParallax = state.parallaxOffset.sanitize()
     val themePresetTitle = stringResource(id = R.string.settings_theme_preset)
-    val breakReminderTitle = stringResource(id = R.string.settings_break_reminder)
     val autoPresetInfo = stringResource(id = R.string.theme_info_auto)
     val focusPresetInfo = stringResource(id = R.string.theme_info_focus)
     val playfulPresetInfo = stringResource(id = R.string.theme_info_playful)
     val serenePresetInfo = stringResource(id = R.string.theme_info_serene)
     val nightPresetInfo = stringResource(id = R.string.theme_info_night)
-    val breakReminderOnInfo = stringResource(id = R.string.break_reminder_info_on)
-    val breakReminderOffInfo = stringResource(id = R.string.break_reminder_info_off)
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 1. 背景层
@@ -229,7 +225,6 @@ fun FlipClockScreen(
             state = state,
             onClose = onCloseSettings,
             onToggleBurnIn = onToggleBurnIn,
-            onToggleSound = onToggleSound,
             onSelectFont = onSelectFont,
             onToggleParallax = onToggleParallax,
             onToggleParticles = onToggleParticles,
@@ -242,13 +237,6 @@ fun FlipClockScreen(
             onToggleDailyAlarm = onToggleDailyAlarm,
             onSetDailyAlarmHour = onSetDailyAlarmHour,
             onSetDailyAlarmMinute = onSetDailyAlarmMinute,
-            onToggleBreakReminder = { enabled ->
-                onToggleBreakReminder(enabled)
-                overlayInfo = OverlayInfo(
-                    title = breakReminderTitle,
-                    body = if (enabled) breakReminderOnInfo else breakReminderOffInfo
-                )
-            },
             onSetThemePreset = { preset ->
                 onSetThemePreset(preset)
                 overlayInfo = OverlayInfo(
@@ -262,7 +250,6 @@ fun FlipClockScreen(
                     }
                 )
             },
-            onToggleThemeEdgeLight = onToggleThemeEdgeLight,
             onSelectSleepSound = onSelectSleepSound,
             onToggleWhiteNoise = onToggleWhiteNoise
         )
@@ -356,7 +343,6 @@ private data class OverlayInfo(
 
 private fun ClockState.effectiveEdgeLightMode(): EdgeLightMode {
     if (edgeLightMode != EdgeLightMode.NONE) return edgeLightMode
-    if (!isThemeEdgeLightEnabled) return EdgeLightMode.NONE
     return when (activeThemePreset) {
         ThemePreset.FOCUS -> EdgeLightMode.AMBIENT_FOCUS
         ThemePreset.PLAYFUL -> EdgeLightMode.AMBIENT_PLAYFUL
@@ -588,9 +574,9 @@ private fun EdgeLightOverlay(
         val coreStroke = outerStroke * 0.26f
         val haloStroke = outerStroke * 1.4f
         val bloomStroke = when (mode) {
-            EdgeLightMode.TIMER_ALERT, EdgeLightMode.BREAK_REMINDER -> outerStroke * 6f
-            EdgeLightMode.STOPWATCH_ACTIVE -> outerStroke * 5f
-            else -> outerStroke * 8f
+            EdgeLightMode.TIMER_ALERT, EdgeLightMode.BREAK_REMINDER -> outerStroke * 7.2f
+            EdgeLightMode.STOPWATCH_ACTIVE -> outerStroke * 6.2f
+            else -> outerStroke * 8.4f
         }
         val cornerRadiusPx = 42.dp.toPx()
         val corner = CornerRadius(cornerRadiusPx, cornerRadiusPx)
@@ -614,25 +600,30 @@ private fun EdgeLightOverlay(
             }),
             center = center
         )
-        // Wide low-alpha stroke: inner half produces a backlit screen-bloom effect.
-        val bloomBrush = Brush.sweepGradient(
-            colorStops = shiftedStops(palette, when (mode) {
-                EdgeLightMode.AMBIENT_NIGHT -> 0.04f
-                EdgeLightMode.AMBIENT_SERENE -> 0.06f
-                EdgeLightMode.AMBIENT_FOCUS -> 0.06f
-                EdgeLightMode.AMBIENT_PLAYFUL -> 0.09f
-                else -> 0.14f
-            }),
-            center = center
-        )
-
-        drawRoundRect(
-            brush = bloomBrush,
-            topLeft = rectTopLeft,
-            size = rectSize,
-            cornerRadius = corner,
-            style = Stroke(width = bloomStroke)
-        )
+        val bloomAlpha = when (mode) {
+            EdgeLightMode.AMBIENT_NIGHT -> 0.032f
+            EdgeLightMode.AMBIENT_SERENE -> 0.044f
+            EdgeLightMode.AMBIENT_FOCUS -> 0.050f
+            EdgeLightMode.AMBIENT_PLAYFUL -> 0.064f
+            else -> 0.082f
+        }
+        listOf(
+            bloomStroke to bloomAlpha * 0.34f,
+            bloomStroke * 0.72f to bloomAlpha * 0.58f,
+            bloomStroke * 0.48f to bloomAlpha * 0.86f,
+            bloomStroke * 0.30f to bloomAlpha
+        ).forEach { (width, alpha) ->
+            drawRoundRect(
+                brush = Brush.sweepGradient(
+                    colorStops = shiftedStops(palette, alpha),
+                    center = center
+                ),
+                topLeft = rectTopLeft,
+                size = rectSize,
+                cornerRadius = corner,
+                style = Stroke(width = width)
+            )
+        }
         drawRoundRect(
             brush = glowBrush,
             topLeft = rectTopLeft,
@@ -1341,47 +1332,55 @@ private fun LiquidGlassChip(
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit
 ) {
-    LiquidGlassSurface(
-        modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-        highlightAlpha = if (selected) 0.16f else 0.08f
-    ) {
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .background(
-                    if (selected) {
-                        Brush.linearGradient(
-                            listOf(
-                                Color(0xFF24364A).copy(alpha = 0.88f),
-                                Color(0xFF182636).copy(alpha = 0.92f)
-                            )
-                        )
-                    } else {
-                        Brush.linearGradient(
-                            listOf(
-                                Color(0xFF162231).copy(alpha = 0.78f),
-                                Color(0xFF101B28).copy(alpha = 0.84f)
-                            )
-                        )
-                    }
-                )
-        )
-        if (selected) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(
-                        Brush.linearGradient(
-                            listOf(
-                                Color.White.copy(alpha = 0.08f),
-                                LiquidGlassCool.copy(alpha = 0.04f)
-                            )
+    val shape = RoundedCornerShape(16.dp)
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .clickable(onClick = onClick)
+            .background(
+                brush = if (selected) {
+                    Brush.linearGradient(
+                        listOf(
+                            Color(0xFF24364A).copy(alpha = 0.88f),
+                            Color(0xFF182636).copy(alpha = 0.92f)
                         )
                     )
+                } else {
+                    Brush.linearGradient(
+                        listOf(
+                            Color(0xFF162231).copy(alpha = 0.78f),
+                            Color(0xFF101B28).copy(alpha = 0.84f)
+                        )
+                    )
+                },
+                shape = shape
             )
-        }
+            .border(
+                width = 0.5.dp,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = if (selected) 0.28f else 0.15f),
+                        Color.White.copy(alpha = 0.05f)
+                    )
+                ),
+                shape = shape
+            )
+            .drawWithContent {
+                drawContent()
+                drawRoundRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = if (selected) 0.13f else 0.07f),
+                            Color.Transparent,
+                            LiquidGlassShadow.copy(alpha = 0.08f)
+                        )
+                    ),
+                    cornerRadius = CornerRadius(16.dp.toPx(), 16.dp.toPx())
+                )
+            }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
         content()
     }
 }
@@ -1485,27 +1484,57 @@ private fun SettingsChip(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(16.dp),
+    padding: PaddingValues = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
     content: @Composable BoxScope.() -> Unit
 ) {
-    SettingsCardSurface(
-        modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-    ) {
-        if (selected) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(
-                        brush = Brush.linearGradient(
-                            listOf(
-                                Color(0xFF2B3A4B).copy(alpha = 0.94f),
-                                Color(0xFF1C2A39).copy(alpha = 0.98f)
-                            )
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .clickable(onClick = onClick)
+            .background(
+                brush = if (selected) {
+                    Brush.linearGradient(
+                        listOf(
+                            Color(0xFF2B3A4B).copy(alpha = 0.96f),
+                            Color(0xFF1C2A39).copy(alpha = 0.98f)
                         )
                     )
+                } else {
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF1C2734).copy(alpha = 0.92f),
+                            Color(0xFF141D29).copy(alpha = 0.95f)
+                        )
+                    )
+                },
+                shape = shape
             )
-        }
+            .border(
+                width = 0.5.dp,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = if (selected) 0.24f else 0.16f),
+                        Color.White.copy(alpha = 0.04f)
+                    )
+                ),
+                shape = shape
+            )
+            .drawWithContent {
+                drawContent()
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = if (selected) 0.08f else 0.04f),
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.06f)
+                        )
+                    )
+                )
+            }
+            .padding(padding),
+        contentAlignment = Alignment.Center
+    ) {
         content()
     }
 }
@@ -1516,7 +1545,6 @@ private fun SettingsMenu(
     state: ClockState,
     onClose: () -> Unit,
     onToggleBurnIn: (Boolean) -> Unit,
-    onToggleSound: (Boolean) -> Unit,
     onSelectFont: (ClockFont) -> Unit,
     onToggleParallax: (Boolean) -> Unit,
     onToggleParticles: (Boolean) -> Unit,
@@ -1529,9 +1557,7 @@ private fun SettingsMenu(
     onToggleDailyAlarm: (Boolean) -> Unit,
     onSetDailyAlarmHour: (Int) -> Unit,
     onSetDailyAlarmMinute: (Int) -> Unit,
-    onToggleBreakReminder: (Boolean) -> Unit,
     onSetThemePreset: (ThemePreset) -> Unit,
-    onToggleThemeEdgeLight: (Boolean) -> Unit,
     onSelectSleepSound: (SleepSoundMode) -> Unit,
     onToggleWhiteNoise: (Boolean) -> Unit
 ) {
@@ -1596,15 +1622,12 @@ private fun SettingsMenu(
                             onSelect = onSelectSleepSound
                         )
                         HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
-                        SettingToggle(stringResource(id = R.string.settings_sound_button), state.isSoundButtonVisible, onToggleSound)
                         ThemePresetSelector(
                             selected = state.selectedThemePreset,
                             active = state.activeThemePreset,
                             onSelect = onSetThemePreset
                         )
-                        SettingToggle(stringResource(id = R.string.settings_theme_edge_light), state.isThemeEdgeLightEnabled, onToggleThemeEdgeLight)
                         SettingToggle(stringResource(id = R.string.settings_hourly_chime), state.hourlyChimeEnabled, onToggleHourlyChime)
-                        SettingToggle(stringResource(id = R.string.settings_break_reminder), state.breakReminderEnabled, onToggleBreakReminder)
                         DailyAlarmCard(
                             enabled = state.dailyAlarmEnabled,
                             hour = state.dailyAlarmHour,
@@ -2646,25 +2669,53 @@ private fun ThemePresetPill(label: String, modifier: Modifier = Modifier) {
 
 @Composable
 private fun DailyAlarmHint(state: ClockState, modifier: Modifier = Modifier) {
-    SettingsCardSurface(
-        shape = RoundedCornerShape(20.dp),
-        padding = PaddingValues(horizontal = 14.dp, vertical = 9.dp),
-        modifier = modifier
-    ) {
-        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                text = stringResource(id = R.string.alarm_enabled_hint),
-                color = LiquidGlassText.copy(alpha = 0.62f),
-                fontSize = 10.sp,
-                fontFamily = UiFontFamily
-            )
-            Text(
-                text = "%02d:%02d".format(state.dailyAlarmHour, state.dailyAlarmMinute),
-                color = LiquidGlassText.copy(alpha = 0.92f),
-                fontSize = 15.sp,
-                fontFamily = UiFontFamily,
-                fontWeight = FontWeight.SemiBold
-            )
+    val progress = state.dailyAlarmProgressFraction()
+    Box(modifier = modifier) {
+        SettingsCardSurface(
+            shape = RoundedCornerShape(20.dp),
+            padding = PaddingValues(horizontal = 14.dp, vertical = 9.dp),
+            modifier = Modifier
+                .drawWithContent {
+                    drawContent()
+                    val stroke = 2.4.dp.toPx()
+                    val corner = 20.dp.toPx()
+                    val inset = stroke / 2f
+                    drawRoundRect(
+                        color = Color.White.copy(alpha = 0.10f),
+                        topLeft = Offset(inset, inset),
+                        size = Size(size.width - stroke, size.height - stroke),
+                        cornerRadius = CornerRadius(corner, corner),
+                        style = Stroke(width = stroke)
+                    )
+                    drawRoundedBorderProgress(
+                        progress = progress,
+                        inset = inset,
+                        corner = corner,
+                        stroke = stroke + 0.8.dp.toPx()
+                    )
+                }
+        ) {
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = stringResource(id = R.string.alarm_enabled_hint),
+                    color = LiquidGlassText.copy(alpha = 0.62f),
+                    fontSize = 10.sp,
+                    fontFamily = UiFontFamily
+                )
+                Text(
+                    text = "%02d:%02d".format(state.dailyAlarmHour, state.dailyAlarmMinute),
+                    color = LiquidGlassText.copy(alpha = 0.92f),
+                    fontSize = 15.sp,
+                    fontFamily = UiFontFamily,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = stringResource(id = R.string.alarm_next_in, formatDurationWords(state.secondsUntilDailyAlarm())),
+                    color = LiquidGlassText.copy(alpha = 0.48f),
+                    fontSize = 9.sp,
+                    fontFamily = UiFontFamily
+                )
+            }
         }
     }
 }
@@ -2678,24 +2729,57 @@ private fun DailyAlarmDialog(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF06111D).copy(alpha = 0.72f)),
+            .background(Color(0xFF06111D).copy(alpha = 0.58f)),
         contentAlignment = Alignment.Center
     ) {
-        SettingsCardSurface(
-            shape = RoundedCornerShape(32.dp),
-            padding = PaddingValues(horizontal = 24.dp, vertical = 22.dp),
+        val dialogShape = RoundedCornerShape(34.dp)
+        Box(
             modifier = Modifier
                 .fillMaxWidth(0.82f)
-                .widthIn(max = 420.dp)
+                .widthIn(max = 520.dp)
+                .clip(dialogShape)
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF1D2938).copy(alpha = 0.94f),
+                            Color(0xFF111A26).copy(alpha = 0.97f),
+                            Color(0xFF0B121C).copy(alpha = 0.98f)
+                        )
+                    ),
+                    shape = dialogShape
+                )
+                .border(
+                    width = 0.6.dp,
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.28f),
+                            Color.White.copy(alpha = 0.08f)
+                        )
+                    ),
+                    shape = dialogShape
+                )
+                .drawWithContent {
+                    drawContent()
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.05f),
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.08f)
+                            )
+                        )
+                    )
+                }
+                .padding(horizontal = 24.dp, vertical = 22.dp)
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Text(
                     text = stringResource(id = R.string.alarm_dialog_title),
                     color = LiquidGlassText,
-                    fontSize = 24.sp,
+                    fontSize = 28.sp,
                     fontFamily = UiFontFamily,
                     fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center
@@ -2703,7 +2787,7 @@ private fun DailyAlarmDialog(
                 Text(
                     text = "%02d:%02d".format(state.dailyAlarmHour, state.dailyAlarmMinute),
                     color = LiquidGlassText.copy(alpha = 0.90f),
-                    fontSize = 34.sp,
+                    fontSize = 46.sp,
                     fontFamily = UiFontFamily,
                     textAlign = TextAlign.Center
                 )
@@ -2715,26 +2799,102 @@ private fun DailyAlarmDialog(
                     textAlign = TextAlign.Center
                 )
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    SettingsChip(selected = false, onClick = onSnooze) {
-                        Text(
-                            text = stringResource(id = R.string.alarm_snooze_10),
-                            color = LiquidGlassText,
-                            fontFamily = UiFontFamily,
-                            fontSize = 13.sp
-                        )
-                    }
-                    SettingsChip(selected = true, onClick = onDismiss) {
-                        Text(
-                            text = stringResource(id = R.string.alarm_dismiss),
-                            color = LiquidGlassText,
-                            fontFamily = UiFontFamily,
-                            fontSize = 13.sp
-                        )
-                    }
+                    AlarmDialogActionButton(
+                        title = stringResource(id = R.string.alarm_snooze_title),
+                        subtitle = stringResource(id = R.string.alarm_snooze_subtitle),
+                        titleColor = Color.White,
+                        subtitleColor = Color.White.copy(alpha = 0.72f),
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0xFF4C9DFF),
+                                Color(0xFF1464DD)
+                            )
+                        ),
+                        onClick = onSnooze,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(72.dp)
+                    )
+                    AlarmDialogActionButton(
+                        title = stringResource(id = R.string.alarm_dismiss),
+                        subtitle = null,
+                        titleColor = Color(0xFF1C2531),
+                        subtitleColor = Color(0xFF1C2531).copy(alpha = 0.70f),
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0xFFE5E9EF).copy(alpha = 0.96f),
+                                Color(0xFFB8C0CB).copy(alpha = 0.95f)
+                            )
+                        ),
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(72.dp)
+                    )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlarmDialogActionButton(
+    title: String,
+    subtitle: String?,
+    titleColor: Color,
+    subtitleColor: Color,
+    brush: Brush,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val shape = RoundedCornerShape(18.dp)
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .clickable(onClick = onClick)
+            .background(brush = brush, shape = shape)
+            .border(
+                width = 0.5.dp,
+                color = Color.White.copy(alpha = 0.26f),
+                shape = shape
+            )
+            .drawWithContent {
+                drawContent()
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.20f),
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.10f)
+                        )
+                    )
+                )
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = title,
+                color = titleColor,
+                fontFamily = UiFontFamily,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    color = subtitleColor,
+                    fontFamily = UiFontFamily,
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }
@@ -3532,6 +3692,18 @@ private fun ClockState.modeProgressFraction(): Float {
     }.coerceIn(0f, 1f)
 }
 
+private fun ClockState.secondsUntilDailyAlarm(): Int {
+    val nowSeconds = currentHour24 * 3600 + (minute.toIntOrNull() ?: 0) * 60 + (second.toIntOrNull() ?: 0)
+    val alarmSeconds = dailyAlarmHour * 3600 + dailyAlarmMinute * 60
+    val remaining = (alarmSeconds - nowSeconds).floorMod(24 * 60 * 60)
+    return if (remaining == 0 && !isDailyAlarmRinging) 24 * 60 * 60 else remaining
+}
+
+private fun ClockState.dailyAlarmProgressFraction(): Float {
+    val remaining = secondsUntilDailyAlarm()
+    return 1f - (remaining / (24f * 60f * 60f))
+}
+
 @Composable
 private fun ParticleWeather.portraitSummary(): String {
     return when (this) {
@@ -3589,6 +3761,65 @@ private fun formatDurationWords(totalSeconds: Int): String {
     }
 }
 
+private fun DrawScope.drawRoundedBorderProgress(
+    progress: Float,
+    inset: Float,
+    corner: Float,
+    stroke: Float
+) {
+    val clampedProgress = progress.coerceIn(0f, 1f)
+    if (clampedProgress <= 0f || size.width <= stroke || size.height <= stroke) return
+
+    val left = inset
+    val top = inset
+    val right = size.width - inset
+    val bottom = size.height - inset
+    val radius = corner
+        .coerceAtMost((right - left) / 2f)
+        .coerceAtMost((bottom - top) / 2f)
+
+    val path = android.graphics.Path().apply {
+        val centerX = (left + right) / 2f
+        moveTo(centerX, top)
+        lineTo(right - radius, top)
+        quadTo(right, top, right, top + radius)
+        lineTo(right, bottom - radius)
+        quadTo(right, bottom, right - radius, bottom)
+        lineTo(left + radius, bottom)
+        quadTo(left, bottom, left, bottom - radius)
+        lineTo(left, top + radius)
+        quadTo(left, top, left + radius, top)
+        lineTo(centerX, top)
+        close()
+    }
+
+    val progressPath = android.graphics.Path()
+    val measure = android.graphics.PathMeasure(path, false)
+    measure.getSegment(0f, measure.length * clampedProgress, progressPath, true)
+
+    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        style = android.graphics.Paint.Style.STROKE
+        strokeWidth = stroke
+        strokeCap = android.graphics.Paint.Cap.ROUND
+        strokeJoin = android.graphics.Paint.Join.ROUND
+        shader = android.graphics.LinearGradient(
+            0f,
+            0f,
+            size.width,
+            size.height,
+            intArrayOf(
+                android.graphics.Color.argb(245, 191, 236, 255),
+                android.graphics.Color.argb(235, 236, 223, 255),
+                android.graphics.Color.argb(245, 255, 205, 238)
+            ),
+            floatArrayOf(0f, 0.52f, 1f),
+            android.graphics.Shader.TileMode.CLAMP
+        )
+    }
+
+    drawContext.canvas.nativeCanvas.drawPath(progressPath, paint)
+}
+
 @Composable
 private fun AudioButton(onClick: () -> Unit, modifier: Modifier) {
     LiquidGlassSurface(
@@ -3615,3 +3846,5 @@ private fun Offset.sanitize(): Offset = Offset(
     x = x.takeIf { it.isFinite() } ?: 0f,
     y = y.takeIf { it.isFinite() } ?: 0f
 )
+
+private fun Int.floorMod(mod: Int): Int = ((this % mod) + mod) % mod
