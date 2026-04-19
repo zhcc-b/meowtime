@@ -18,20 +18,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
-import com.example.mytime.ui.ClockState
 import com.example.mytime.ui.EdgeLightMode
-import com.example.mytime.ui.ThemePreset
-
-internal fun ClockState.effectiveEdgeLightMode(): EdgeLightMode? {
-    edgeLightMode?.let { return it }
-    return when (activeThemePreset) {
-        ThemePreset.FOCUS -> EdgeLightMode.AMBIENT_FOCUS
-        ThemePreset.PLAYFUL -> EdgeLightMode.AMBIENT_PLAYFUL
-        ThemePreset.SERENE -> EdgeLightMode.AMBIENT_SERENE
-        ThemePreset.NIGHT -> EdgeLightMode.AMBIENT_NIGHT
-        else -> null
-    }
-}
 
 @Composable
 internal fun EdgeLightOverlay(

@@ -354,12 +354,12 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         if (activeWeather != requestedWeather) {
             activeWeather = requestedWeather
         }
-        val weatherCandidates = weatherCandidatesForPreset(
+        val weatherCandidates = ClockStateReducers.weatherCandidatesForPreset(
             preset = resolvedPreset,
             hour24 = timeTick.hour24,
             allowBrightWeather = !timeTick.isNightQuietHours
         )
-        if (timeTick.isNightQuietHours && activeWeather.isBrightWeather()) {
+        if (timeTick.isNightQuietHours && ClockStateReducers.isBrightWeather(activeWeather)) {
             activeWeather = pickRandomWeather(
                 excluding = activeWeather,
                 candidates = weatherCandidates,
@@ -435,12 +435,14 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
             nextMessage = appContext.getString(R.string.reminder_hourly_chime, timeTick.displayHour)
         }
         if (
-            state.dailyAlarmEnabled &&
-            !state.isDailyAlarmRinging &&
-            timeTick.hour24 == state.dailyAlarmHour &&
-            timeTick.minute == state.dailyAlarmMinute &&
-            timeTick.second == 0 &&
-            dailyMarker != lastDailyAlarmMarker
+            ClockStateReducers.shouldTriggerDailyAlarm(
+                state = state,
+                hour24 = timeTick.hour24,
+                minute = timeTick.minute,
+                second = timeTick.second,
+                dailyMarker = dailyMarker,
+                lastDailyAlarmMarker = lastDailyAlarmMarker
+            )
         ) {
             lastDailyAlarmMarker = dailyMarker
             shouldStartDailyAlarm = true
@@ -486,7 +488,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
 
         val weightedOptions = buildList {
             options.forEach { weather ->
-                val baseWeight = weather.weight(preferCalm = preferCalm)
+                val baseWeight = ClockStateReducers.weatherWeight(weather, preferCalm = preferCalm)
                 // Lower chance of repeating very recent weather types.
                 val adjustedWeight = if (recent.contains(weather)) {
                     (baseWeight - 1).coerceAtLeast(1)
@@ -500,83 +502,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         return weightedOptions[random.nextInt(weightedOptions.size)]
     }
 
-    private fun ParticleWeather.isBrightWeather(): Boolean {
-        return this == ParticleWeather.SUNNY || this == ParticleWeather.CLOUDY
-    }
-
-    private fun weatherCandidatesForPreset(
-        preset: ThemePreset,
-        hour24: Int,
-        allowBrightWeather: Boolean
-    ): List<ParticleWeather> {
-        val base = when (preset) {
-            ThemePreset.FOCUS -> listOf(
-                ParticleWeather.WIND,
-                ParticleWeather.CLOUDY,
-                ParticleWeather.FOG,
-                ParticleWeather.DRIZZLE,
-                ParticleWeather.RAIN,
-                ParticleWeather.HAIL
-            )
-            ThemePreset.PLAYFUL -> listOf(
-                ParticleWeather.SUNNY,
-                ParticleWeather.CLOUDY,
-                ParticleWeather.WIND,
-                ParticleWeather.DRIZZLE,
-                ParticleWeather.RAIN,
-                ParticleWeather.HAIL
-            )
-            ThemePreset.SERENE -> listOf(
-                ParticleWeather.CLOUDY,
-                ParticleWeather.FOG,
-                ParticleWeather.DRIZZLE,
-                ParticleWeather.RAIN,
-                ParticleWeather.SNOW,
-                ParticleWeather.WIND
-            )
-            ThemePreset.NIGHT -> listOf(
-                ParticleWeather.RAIN,
-                ParticleWeather.DRIZZLE,
-                ParticleWeather.HAIL
-            )
-            ThemePreset.AUTO -> weatherCandidatesForPreset(
-                preset = ThemePreset.AUTO.resolveActive(hour24),
-                hour24 = hour24,
-                allowBrightWeather = allowBrightWeather
-            )
-        }
-        return if (allowBrightWeather) {
-            base
-        } else {
-            base.filter { it.isNightSafeWeather() }
-        }
-    }
-
-    private fun ParticleWeather.isNightSafeWeather(): Boolean {
-        return when (this) {
-            ParticleWeather.SUNNY, ParticleWeather.CLOUDY, ParticleWeather.HAIL, ParticleWeather.BLIZZARD -> false
-            ParticleWeather.FOG, ParticleWeather.DRIZZLE, ParticleWeather.RAIN, ParticleWeather.SNOW, ParticleWeather.WIND -> true
-        }
-    }
-
-    private fun ParticleWeather.weight(preferCalm: Boolean): Int {
-        if (!preferCalm) {
-            return when (this) {
-                ParticleWeather.DRIZZLE -> 4
-                ParticleWeather.FOG -> 3
-                ParticleWeather.CLOUDY, ParticleWeather.RAIN, ParticleWeather.WIND, ParticleWeather.SNOW -> 2
-                ParticleWeather.SUNNY, ParticleWeather.HAIL, ParticleWeather.BLIZZARD -> 1
-            }
-        }
-        return when (this) {
-            ParticleWeather.DRIZZLE, ParticleWeather.FOG -> 5
-            ParticleWeather.RAIN, ParticleWeather.SNOW -> 3
-            ParticleWeather.WIND -> 2
-            ParticleWeather.CLOUDY -> 1
-            ParticleWeather.SUNNY, ParticleWeather.HAIL, ParticleWeather.BLIZZARD -> 1
-        }
-    }
-
     private data class ModeTickResult(
         val state: ClockState,
         val message: String? = null,
@@ -586,76 +511,28 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     )
 
     private fun advanceModeState(state: ClockState): ModeTickResult {
-        if (!state.timerRunning) return ModeTickResult(state)
-        return when (state.clockMode) {
-            ClockMode.CLOCK -> ModeTickResult(state)
-            ClockMode.POMODORO -> {
-                val nextRemaining = state.pomodoroRemainingSeconds - 1
-                val focusedSeconds = state.focusedSecondsToday + if (state.pomodoroPhase == PomodoroPhase.FOCUS) 1 else 0
-                if (nextRemaining <= 0) {
-                    if (state.pomodoroPhase == PomodoroPhase.FOCUS) {
-                        ModeTickResult(
-                            state.copy(
-                                pomodoroPhase = PomodoroPhase.BREAK,
-                                pomodoroRemainingSeconds = state.pomodoroBreakMinutes * 60,
-                                focusedSecondsToday = focusedSeconds,
-                                completedPomodoros = state.completedPomodoros + 1
-                            ),
-                            message = appContext.getString(R.string.companion_focus_done),
-                            triggerSound = true,
-                            edgeLightMode = EdgeLightMode.TIMER_ALERT,
-                            edgeLightDurationMs = TIMER_ALERT_EDGE_MS
-                        )
-                    } else {
-                        ModeTickResult(
-                            state.copy(
-                                pomodoroPhase = PomodoroPhase.FOCUS,
-                                pomodoroRemainingSeconds = state.pomodoroFocusMinutes * 60,
-                                completedBreaks = state.completedBreaks + 1
-                            ),
-                            message = appContext.getString(R.string.companion_break_done),
-                            triggerSound = true,
-                            edgeLightMode = EdgeLightMode.TIMER_ALERT,
-                            edgeLightDurationMs = TIMER_ALERT_EDGE_MS
-                        )
-                    }
-                } else {
-                    ModeTickResult(
-                        state.copy(
-                            pomodoroRemainingSeconds = nextRemaining,
-                            focusedSecondsToday = focusedSeconds
-                        )
-                    )
-                }
-            }
-            ClockMode.COUNTDOWN -> {
-                val nextRemaining = state.countdownRemainingSeconds - 1
-                if (nextRemaining <= 0) {
-                    ModeTickResult(
-                        state.copy(
-                            countdownRemainingSeconds = 0,
-                            timerRunning = false
-                        ),
-                        message = appContext.getString(R.string.companion_countdown_done),
-                        triggerSound = true,
-                        edgeLightMode = EdgeLightMode.TIMER_ALERT,
-                        edgeLightDurationMs = TIMER_ALERT_EDGE_MS
-                    )
-                } else {
-                    ModeTickResult(state.copy(countdownRemainingSeconds = nextRemaining))
-                }
-            }
-            ClockMode.STOPWATCH -> {
-                val nextElapsed = state.stopwatchElapsedSeconds + 1
-                val needsBreakNudge = nextElapsed > 0 && nextElapsed % BREAK_NUDGE_INTERVAL_SEC == 0
-                ModeTickResult(
-                    state.copy(stopwatchElapsedSeconds = nextElapsed),
-                    message = if (needsBreakNudge) appContext.getString(R.string.companion_break_nudge) else null,
-                    triggerSound = false,
-                    edgeLightMode = if (needsBreakNudge) EdgeLightMode.BREAK_REMINDER else null,
-                    edgeLightDurationMs = if (needsBreakNudge) BREAK_NUDGE_EDGE_MS else null
-                )
-            }
+        val result = ClockStateReducers.advanceModeState(
+            state = state,
+            timerAlertEdgeMs = TIMER_ALERT_EDGE_MS,
+            breakNudgeIntervalSec = BREAK_NUDGE_INTERVAL_SEC,
+            breakNudgeEdgeMs = BREAK_NUDGE_EDGE_MS
+        )
+        return ModeTickResult(
+            state = result.state,
+            message = result.message.toCompanionMessage(),
+            triggerSound = result.triggerSound,
+            edgeLightMode = result.edgeLightMode,
+            edgeLightDurationMs = result.edgeLightDurationMs
+        )
+    }
+
+    private fun ClockStateReducers.ModeMessage?.toCompanionMessage(): String? {
+        return when (this) {
+            ClockStateReducers.ModeMessage.FOCUS_DONE -> appContext.getString(R.string.companion_focus_done)
+            ClockStateReducers.ModeMessage.BREAK_DONE -> appContext.getString(R.string.companion_break_done)
+            ClockStateReducers.ModeMessage.COUNTDOWN_DONE -> appContext.getString(R.string.companion_countdown_done)
+            ClockStateReducers.ModeMessage.BREAK_NUDGE -> appContext.getString(R.string.companion_break_nudge)
+            null -> null
         }
     }
 
@@ -1001,7 +878,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                 val hour24 = state.currentHour24
                 val resolvedPreset = state.selectedThemePreset.resolveActive(hour24)
                 val isNightQuietHours = hour24 >= 23 || hour24 < 7
-                val weatherCandidates = weatherCandidatesForPreset(
+                val weatherCandidates = ClockStateReducers.weatherCandidatesForPreset(
                     preset = resolvedPreset,
                     hour24 = hour24,
                     allowBrightWeather = !isNightQuietHours
@@ -1073,10 +950,10 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         val snoozeSeconds = (DAILY_ALARM_SNOOZE_MS / 1000L).toInt()
         dailyAlarmSnoozeDeadlineElapsedMs = SystemClock.elapsedRealtime() + DAILY_ALARM_SNOOZE_MS
         _uiState.update {
-            it.copy(
-                isDailyAlarmRinging = false,
-                dailyAlarmSnoozeRemainingSeconds = snoozeSeconds,
-                companionMessage = appContext.getString(R.string.alarm_snoozed_message)
+            ClockStateReducers.snoozeDailyAlarmState(
+                state = it,
+                snoozeSeconds = snoozeSeconds,
+                message = appContext.getString(R.string.alarm_snoozed_message)
             )
         }
         dailyAlarmSnoozeJob?.cancel()
@@ -1095,10 +972,9 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         stopDailyAlarmSound()
         clearEdgeLight()
         _uiState.update {
-            it.copy(
-                isDailyAlarmRinging = false,
-                dailyAlarmSnoozeRemainingSeconds = 0,
-                companionMessage = appContext.getString(R.string.alarm_dismissed_message)
+            ClockStateReducers.dismissDailyAlarmState(
+                state = it,
+                message = appContext.getString(R.string.alarm_dismissed_message)
             )
         }
     }
