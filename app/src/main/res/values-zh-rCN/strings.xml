@@ -6,7 +6,6 @@
     <string name="settings_particle_weather">粒子天气</string>
     <string name="settings_particle_weather_auto">自动（每8小时随机）</string>
     <string name="settings_cats">实时小猫</string>
-    <string name="settings_burnin">防烧屏</string>
     <string name="settings_24_hour">24 小时制</string>
     <string name="settings_white_noise">睡眠声音</string>
     <string name="settings_sleep_sound">睡眠声音</string>
@@ -68,9 +67,10 @@
     <string name="reminder_hourly_chime">%1$s 整，做个整点检查。</string>
     <string name="reminder_alarm_now">闹钟时间到了。</string>
     <string name="alarm_enabled_hint">闹钟已开启</string>
+    <string name="alarm_snooze_hint">稍后提醒中</string>
     <string name="alarm_next_in">%1$s 后响</string>
     <string name="alarm_dialog_title">闹钟</string>
-    <string name="alarm_dialog_body">闹钟最多会响 5 分钟。</string>
+    <string name="alarm_dialog_body">闹钟最多会响 9 分钟。</string>
     <string name="alarm_snooze_title">稍后提醒</string>
     <string name="alarm_snooze_subtitle">10 分钟</string>
     <string name="alarm_dismiss">关闭闹钟</string>

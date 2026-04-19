@@ -19,7 +19,6 @@ data class ClockState(
     val backgroundRes: Int? = null,
     
     // 设置项
-    val isBurnInProtectionEnabled: Boolean = true,
     val isSoundButtonVisible: Boolean = true,
     val isSettingsVisible: Boolean = false,
     
@@ -54,6 +53,7 @@ data class ClockState(
     val dailyAlarmHour: Int = 8,
     val dailyAlarmMinute: Int = 0,
     val isDailyAlarmRinging: Boolean = false,
+    val dailyAlarmSnoozeRemainingSeconds: Int = 0,
     val companionMessage: String = "",
 
     // 主题与环境
@@ -62,7 +62,7 @@ data class ClockState(
     val whiteNoiseEnabled: Boolean = false,
     val sleepSoundMode: SleepSoundMode = SleepSoundMode.RAIN,
     val sleepSoundRemainingSeconds: Int = 0,
-    val edgeLightMode: EdgeLightMode = EdgeLightMode.NONE,
+    val edgeLightMode: EdgeLightMode? = null,
 
     // 视差位移 (由陀螺仪控制)
     val parallaxOffset: Offset = Offset.Zero,

@@ -116,7 +116,7 @@ class WhiteNoisePlayer {
             val fineMist = airSheen * 0.014f
             val drops = (random.nextFloat() * 2f - 1f) * dropEnergy * 0.038f
             val lowRumble = sin(rumblePhase) * 0.010f
-            val sample = (steadyBody + fineMist + drops + lowRumble).coerceIn(-0.24f, 0.24f)
+            val sample = ((steadyBody + fineMist + drops + lowRumble) * 1.32f).coerceIn(-0.32f, 0.32f)
             buffer[i] = (sample * Short.MAX_VALUE).toInt().toShort()
         }
         state.filteredRain = filteredRain

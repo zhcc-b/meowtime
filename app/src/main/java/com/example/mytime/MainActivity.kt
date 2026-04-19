@@ -154,7 +154,6 @@ class MainActivity : ComponentActivity() {
                         onPlayAudio = { viewModel.playAudio() },
                         onOpenSettings = { viewModel.openSettings() },
                         onCloseSettings = { viewModel.closeSettings() },
-                        onToggleBurnIn = { viewModel.toggleBurnIn(it) },
                         onSelectFont = { viewModel.setFont(it) },
                         onToggleParallax = { viewModel.toggleParallax(it) },
                         onToggleParticleWeatherAuto = { viewModel.setParticleWeatherAuto(it) },

@@ -57,7 +57,6 @@ import kotlin.random.Random
 private val Context.dataStore by preferencesDataStore(name = "clock_settings")
 
 private object PreferenceKeys {
-    val burnIn = booleanPreferencesKey("burn_in")
     val parallax = booleanPreferencesKey("parallax")
     val cats = booleanPreferencesKey("cats")
     val is24Hour = booleanPreferencesKey("is_24_hour")
@@ -109,6 +108,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private var sleepSoundJob: Job? = null
     private var dailyAlarmJob: Job? = null
     private var dailyAlarmSnoozeJob: Job? = null
+    private var dailyAlarmSnoozeDeadlineElapsedMs: Long? = null
     private var sleepSoundEndsAtElapsedMs: Long = 0L
     private var sensorRegistered = false
     private var isAppActive = false
@@ -154,7 +154,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                     val sleepMode = runCatching { SleepSoundMode.valueOf(preferences[PreferenceKeys.sleepSoundMode] ?: SleepSoundMode.RAIN.name) }
                         .getOrDefault(SleepSoundMode.RAIN)
                     state.copy(
-                        isBurnInProtectionEnabled = preferences[PreferenceKeys.burnIn] ?: state.isBurnInProtectionEnabled,
                         isParallaxEnabled = preferences[PreferenceKeys.parallax] ?: state.isParallaxEnabled,
                         isParticleWeatherAuto = manualWeather == null,
                         particleWeather = manualWeather ?: state.particleWeather,
@@ -283,13 +282,13 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                     edgeLightMode = modeTick.edgeLightMode
                     edgeLightDurationMs = modeTick.edgeLightDurationMs
 
-                    val burnInOffset = when {
-                        !workingState.isBurnInProtectionEnabled -> Offset.Zero
-                        currentMinute != lastMinute -> Offset(
+                    val burnInOffset = if (currentMinute != lastMinute) {
+                        Offset(
                             x = random.nextFloat() * 20f - 10f,
                             y = random.nextFloat() * 20f - 10f
                         )
-                        else -> workingState.burnInOffset
+                    } else {
+                        workingState.burnInOffset
                     }
                     val displayHour = if (workingState.is24HourFormat) {
                         hour24.toString().padStart(2, '0')
@@ -301,6 +300,13 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                     val hourlyMarker = "${now.toLocalDate()}-$hour24"
                     val dailyMarker = "${now.toLocalDate()}-${workingState.dailyAlarmHour}-${workingState.dailyAlarmMinute}"
                     var companionMessage = modeTick.message ?: workingState.companionMessage
+                    val snoozeRemainingSeconds = dailyAlarmSnoozeDeadlineElapsedMs
+                        ?.let { deadline ->
+                            (((deadline - SystemClock.elapsedRealtime()) + 999L) / 1000L)
+                                .coerceAtLeast(0L)
+                                .toInt()
+                        }
+                        ?: 0
 
                     if (workingState.hourlyChimeEnabled && currentMinute == 0 && second == 0 && hourlyMarker != lastHourlyChimeMarker) {
                         lastHourlyChimeMarker = hourlyMarker
@@ -333,6 +339,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         backgroundRes = if (isNightQuietHours) null else R.drawable.jiguang,
                         particleWeather = if (workingState.isParticleWeatherAuto) activeWeather else workingState.particleWeather,
                         burnInOffset = burnInOffset,
+                        dailyAlarmSnoozeRemainingSeconds = snoozeRemainingSeconds,
                         companionMessage = companionMessage
                     )
                 }
@@ -592,6 +599,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         dailyAlarmJob = viewModelScope.launch {
             delay(DAILY_ALARM_RING_MS)
             stopDailyAlarmSound()
+            clearEdgeLight()
             _uiState.update { it.copy(isDailyAlarmRinging = false) }
         }
     }
@@ -738,16 +746,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     fun openSettings() = _uiState.update { it.copy(isSettingsVisible = true) }
     fun closeSettings() = _uiState.update { it.copy(isSettingsVisible = false) }
 
-    fun toggleBurnIn(enabled: Boolean) {
-        _uiState.update {
-            it.copy(
-                isBurnInProtectionEnabled = enabled,
-                burnInOffset = if (enabled) it.burnInOffset else Offset.Zero
-            )
-        }
-        persistSetting { this[PreferenceKeys.burnIn] = enabled }
-    }
-
     fun setFont(font: ClockFont) {
         _uiState.update { it.copy(selectedFont = font) }
         persistSetting { this[PreferenceKeys.selectedFont] = font.name }
@@ -779,7 +777,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
             }
         }
         if (mode != ClockMode.STOPWATCH) {
-            showEdgeLight(EdgeLightMode.NONE)
+            clearEdgeLight()
         }
         persistSetting { this[PreferenceKeys.clockMode] = mode.name }
     }
@@ -802,9 +800,9 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         }
         nextState?.let { updated ->
             when (updated.clockMode) {
-                ClockMode.STOPWATCH -> showEdgeLight(if (updated.timerRunning) EdgeLightMode.STOPWATCH_ACTIVE else EdgeLightMode.NONE)
+                ClockMode.STOPWATCH -> if (updated.timerRunning) showEdgeLight(EdgeLightMode.STOPWATCH_ACTIVE) else clearEdgeLight()
                 ClockMode.CLOCK -> Unit
-                else -> if (!updated.timerRunning) showEdgeLight(EdgeLightMode.NONE)
+                else -> if (!updated.timerRunning) clearEdgeLight()
             }
         }
     }
@@ -831,7 +829,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                 )
             }
         }
-        showEdgeLight(EdgeLightMode.NONE)
+        clearEdgeLight()
     }
 
     fun adjustPomodoroFocus(delta: Int) {
@@ -977,6 +975,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
             dismissDailyAlarm()
             dailyAlarmSnoozeJob?.cancel()
             dailyAlarmSnoozeJob = null
+            dailyAlarmSnoozeDeadlineElapsedMs = null
+            _uiState.update { it.copy(dailyAlarmSnoozeRemainingSeconds = 0) }
         }
         persistSetting { this[PreferenceKeys.dailyAlarmEnabled] = enabled }
     }
@@ -1011,15 +1011,21 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
 
     fun snoozeDailyAlarm() {
         stopDailyAlarmSound()
+        clearEdgeLight()
+        val snoozeSeconds = (DAILY_ALARM_SNOOZE_MS / 1000L).toInt()
+        dailyAlarmSnoozeDeadlineElapsedMs = SystemClock.elapsedRealtime() + DAILY_ALARM_SNOOZE_MS
         _uiState.update {
             it.copy(
                 isDailyAlarmRinging = false,
+                dailyAlarmSnoozeRemainingSeconds = snoozeSeconds,
                 companionMessage = appContext.getString(R.string.alarm_snoozed_message)
             )
         }
         dailyAlarmSnoozeJob?.cancel()
         dailyAlarmSnoozeJob = viewModelScope.launch {
             delay(DAILY_ALARM_SNOOZE_MS)
+            dailyAlarmSnoozeDeadlineElapsedMs = null
+            _uiState.update { it.copy(dailyAlarmSnoozeRemainingSeconds = 0) }
             if (_uiState.value.dailyAlarmEnabled) {
                 startDailyAlarm()
             }
@@ -1029,10 +1035,13 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     fun dismissDailyAlarm() {
         dailyAlarmSnoozeJob?.cancel()
         dailyAlarmSnoozeJob = null
+        dailyAlarmSnoozeDeadlineElapsedMs = null
         stopDailyAlarmSound()
+        clearEdgeLight()
         _uiState.update {
             it.copy(
                 isDailyAlarmRinging = false,
+                dailyAlarmSnoozeRemainingSeconds = 0,
                 companionMessage = appContext.getString(R.string.alarm_dismissed_message)
             )
         }
@@ -1051,19 +1060,31 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private fun showEdgeLight(mode: EdgeLightMode, durationMs: Long? = null) {
         edgeLightJob?.cancel()
         _uiState.update { it.copy(edgeLightMode = mode) }
-        if (mode != EdgeLightMode.NONE && durationMs != null) {
+        if (durationMs != null) {
             edgeLightJob = viewModelScope.launch {
                 delay(durationMs)
                 _uiState.update { state ->
                     if (state.clockMode == ClockMode.STOPWATCH && state.timerRunning) {
                         state.copy(edgeLightMode = EdgeLightMode.STOPWATCH_ACTIVE)
                     } else {
-                        state.copy(edgeLightMode = EdgeLightMode.NONE)
+                        state.copy(edgeLightMode = null)
                     }
                 }
             }
         } else {
             edgeLightJob = null
+        }
+    }
+
+    private fun clearEdgeLight() {
+        edgeLightJob?.cancel()
+        edgeLightJob = null
+        _uiState.update { state ->
+            if (state.clockMode == ClockMode.STOPWATCH && state.timerRunning) {
+                state.copy(edgeLightMode = EdgeLightMode.STOPWATCH_ACTIVE)
+            } else {
+                state.copy(edgeLightMode = null)
+            }
         }
     }
 
@@ -1232,7 +1253,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
 }
 
 private const val SLEEP_SOUND_DURATION_MS = 60L * 60L * 1000L
-private const val DAILY_ALARM_RING_MS = 5L * 60L * 1000L
+private const val DAILY_ALARM_RING_MS = 9L * 60L * 1000L
 private const val DAILY_ALARM_SNOOZE_MS = 10L * 60L * 1000L
 
 private fun Offset.sanitize(): Offset = Offset(

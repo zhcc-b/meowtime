@@ -28,7 +28,6 @@ enum class ThemePreset {
 }
 
 enum class EdgeLightMode {
-    NONE,
     BREAK_REMINDER,
     TIMER_ALERT,
     STOPWATCH_ACTIVE,

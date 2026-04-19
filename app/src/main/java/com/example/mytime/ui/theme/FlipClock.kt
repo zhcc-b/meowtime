@@ -84,7 +84,6 @@ fun FlipClockScreen(
     onPlayAudio: () -> Unit,
     onOpenSettings: () -> Unit,
     onCloseSettings: () -> Unit,
-    onToggleBurnIn: (Boolean) -> Unit,
     onSelectFont: (ClockFont) -> Unit,
     onToggleParallax: (Boolean) -> Unit,
     onToggleParticleWeatherAuto: (Boolean) -> Unit,
@@ -110,6 +109,7 @@ fun FlipClockScreen(
     val currentFont = state.selectedFont.family
     var timeRect by remember { mutableStateOf(RectF()) }
     var overlayInfo by remember { mutableStateOf<OverlayInfo?>(null) }
+    var shouldScrollToAlarmSettings by remember { mutableStateOf(false) }
     val settingsDim = if (state.isSettingsVisible) 0.34f else 1f
     val safeParallax = state.parallaxOffset.sanitize()
     val themePresetTitle = stringResource(id = R.string.settings_theme_preset)
@@ -194,6 +194,10 @@ fun FlipClockScreen(
         if (state.dailyAlarmEnabled && !state.isSettingsVisible) {
             DailyAlarmHint(
                 state = state,
+                onClick = {
+                    shouldScrollToAlarmSettings = true
+                    onOpenSettings()
+                },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(
@@ -206,8 +210,9 @@ fun FlipClockScreen(
         SettingsMenu(
             visible = state.isSettingsVisible,
             state = state,
+            shouldScrollToAlarmSettings = shouldScrollToAlarmSettings,
+            onAlarmSettingsScrollHandled = { shouldScrollToAlarmSettings = false },
             onClose = onCloseSettings,
-            onToggleBurnIn = onToggleBurnIn,
             onSelectFont = onSelectFont,
             onToggleParallax = onToggleParallax,
             onToggleParticleWeatherAuto = onToggleParticleWeatherAuto,
@@ -322,14 +327,14 @@ private data class OverlayInfo(
     val body: String
 )
 
-private fun ClockState.effectiveEdgeLightMode(): EdgeLightMode {
-    if (edgeLightMode != EdgeLightMode.NONE) return edgeLightMode
+private fun ClockState.effectiveEdgeLightMode(): EdgeLightMode? {
+    edgeLightMode?.let { return it }
     return when (activeThemePreset) {
         ThemePreset.FOCUS -> EdgeLightMode.AMBIENT_FOCUS
         ThemePreset.PLAYFUL -> EdgeLightMode.AMBIENT_PLAYFUL
         ThemePreset.SERENE -> EdgeLightMode.AMBIENT_SERENE
         ThemePreset.NIGHT -> EdgeLightMode.AMBIENT_NIGHT
-        else -> EdgeLightMode.NONE
+        else -> null
     }
 }
 
@@ -381,10 +386,10 @@ private fun ExplanationOverlay(
 
 @Composable
 private fun EdgeLightOverlay(
-    mode: EdgeLightMode,
+    mode: EdgeLightMode?,
     modifier: Modifier = Modifier
 ) {
-    if (mode == EdgeLightMode.NONE) return
+    if (mode == null) return
 
     val transition = rememberInfiniteTransition(label = "edge_light")
     val colorShift by transition.animateFloat(
@@ -400,7 +405,6 @@ private fun EdgeLightOverlay(
                     EdgeLightMode.AMBIENT_PLAYFUL -> 5600
                     EdgeLightMode.AMBIENT_SERENE -> 10000
                     EdgeLightMode.AMBIENT_NIGHT -> 16000
-                    EdgeLightMode.NONE -> 4000
                 },
                 easing = LinearEasing
             )
@@ -420,13 +424,21 @@ private fun EdgeLightOverlay(
                     EdgeLightMode.AMBIENT_PLAYFUL -> 1800
                     EdgeLightMode.AMBIENT_SERENE -> 3200
                     EdgeLightMode.AMBIENT_NIGHT -> 4800
-                    EdgeLightMode.NONE -> 1000
                 },
                 easing = EaseInOutSine
             ),
             repeatMode = RepeatMode.Reverse
         ),
         label = "edge_pulse"
+    )
+    val alertFlash by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 430, easing = EaseInOutSine),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "edge_alert_flash"
     )
 
     val overlayAlpha = when (mode) {
@@ -437,7 +449,6 @@ private fun EdgeLightOverlay(
         EdgeLightMode.AMBIENT_PLAYFUL -> 0.62f
         EdgeLightMode.AMBIENT_SERENE -> 0.38f
         EdgeLightMode.AMBIENT_NIGHT -> 0.28f
-        EdgeLightMode.NONE -> 0f
     }
     val palette = when (mode) {
         EdgeLightMode.BREAK_REMINDER -> listOf(
@@ -507,7 +518,6 @@ private fun EdgeLightOverlay(
             Color(0xFF0D3B5E),
             Color(0xFF1A1A4E)
         )
-        EdgeLightMode.NONE -> emptyList()
     }
 
     // Interpolates across the cyclic palette at evenly-spaced display positions offset by
@@ -544,7 +554,6 @@ private fun EdgeLightOverlay(
             EdgeLightMode.AMBIENT_PLAYFUL -> 8.dp.toPx()
             EdgeLightMode.AMBIENT_SERENE -> 6.dp.toPx()
             EdgeLightMode.AMBIENT_NIGHT -> 4.dp.toPx()
-            EdgeLightMode.NONE -> 0f
         }
         val glowStroke = when (mode) {
             EdgeLightMode.AMBIENT_NIGHT -> outerStroke * 2.8f
@@ -563,6 +572,51 @@ private fun EdgeLightOverlay(
         val corner = CornerRadius(cornerRadiusPx, cornerRadiusPx)
         val rectTopLeft = Offset(inset, inset)
         val rectSize = Size(size.width - inset * 2f, size.height - inset * 2f)
+        if (mode == EdgeLightMode.TIMER_ALERT) {
+            val warm = Color(0xFFFF4A3D)
+            val hot = Color(0xFFFFD36A)
+            val flash = alertFlash.coerceIn(0f, 1f)
+            val alertColor = Color(
+                red = warm.red + (hot.red - warm.red) * flash,
+                green = warm.green + (hot.green - warm.green) * flash,
+                blue = warm.blue + (hot.blue - warm.blue) * flash,
+                alpha = 1f
+            )
+            val flashAlpha = 0.42f + flash * 0.58f
+
+            drawRect(
+                color = alertColor.copy(alpha = safeAlpha(0.055f + flash * 0.055f))
+            )
+            listOf(
+                outerStroke * 8.0f to 0.12f,
+                outerStroke * 5.2f to 0.22f,
+                outerStroke * 3.0f to 0.34f,
+                outerStroke * 1.5f to 0.52f
+            ).forEach { (width, alpha) ->
+                drawRoundRect(
+                    color = alertColor.copy(alpha = safeAlpha(alpha * flashAlpha)),
+                    topLeft = rectTopLeft,
+                    size = rectSize,
+                    cornerRadius = corner,
+                    style = Stroke(width = width)
+                )
+            }
+            drawRoundRect(
+                color = alertColor.copy(alpha = safeAlpha(0.92f * flashAlpha)),
+                topLeft = rectTopLeft,
+                size = rectSize,
+                cornerRadius = corner,
+                style = Stroke(width = outerStroke * (1.08f + flash * 0.18f))
+            )
+            drawRoundRect(
+                color = Color.White.copy(alpha = safeAlpha(0.42f + flash * 0.42f)),
+                topLeft = rectTopLeft,
+                size = rectSize,
+                cornerRadius = corner,
+                style = Stroke(width = coreStroke * (1.1f + flash * 0.3f))
+            )
+            return@Canvas
+        }
         val glowBrush = Brush.sweepGradient(
             colorStops = shiftedStops(palette, when (mode) {
                 EdgeLightMode.AMBIENT_NIGHT -> 0.20f
@@ -1524,8 +1578,9 @@ private fun SettingsChip(
 private fun SettingsMenu(
     visible: Boolean,
     state: ClockState,
+    shouldScrollToAlarmSettings: Boolean,
+    onAlarmSettingsScrollHandled: () -> Unit,
     onClose: () -> Unit,
-    onToggleBurnIn: (Boolean) -> Unit,
     onSelectFont: (ClockFont) -> Unit,
     onToggleParallax: (Boolean) -> Unit,
     onToggleParticleWeatherAuto: (Boolean) -> Unit,
@@ -1542,6 +1597,14 @@ private fun SettingsMenu(
 ) {
     if (visible) {
         BackHandler(onBack = onClose)
+        val scrollState = rememberScrollState()
+        LaunchedEffect(visible, shouldScrollToAlarmSettings) {
+            if (visible && shouldScrollToAlarmSettings) {
+                withFrameNanos { }
+                scrollState.animateScrollTo((scrollState.maxValue * 0.84f).roundToInt())
+                onAlarmSettingsScrollHandled()
+            }
+        }
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
@@ -1563,7 +1626,7 @@ private fun SettingsMenu(
                     padding = PaddingValues(horizontal = 22.dp, vertical = 24.dp)
                 ) {
                     Column(
-                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        modifier = Modifier.verticalScroll(scrollState),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Text(
@@ -1587,7 +1650,6 @@ private fun SettingsMenu(
                             onSelectWeather = onSelectParticleWeather
                         )
                         SettingToggle(stringResource(id = R.string.settings_cats), state.isCatSystemEnabled, onToggleCats)
-                        SettingToggle(stringResource(id = R.string.settings_burnin), state.isBurnInProtectionEnabled, onToggleBurnIn)
                         SettingToggle(stringResource(id = R.string.settings_24_hour), state.is24HourFormat, onToggle24HourFormat)
                         SleepSoundSelector(
                             selected = state.sleepSoundMode,
@@ -1883,7 +1945,8 @@ private fun DailyAlarmCard(
                             values = (0..23).toList(),
                             selected = hour,
                             labelFormatter = { "%02d".format(it) },
-                            onSelected = onSetHour
+                            onSelected = onSetHour,
+                            wrapAround = true
                         )
                         Text(
                             ":",
@@ -1896,7 +1959,8 @@ private fun DailyAlarmCard(
                             values = (0..59).toList(),
                             selected = minute,
                             labelFormatter = { "%02d".format(it) },
-                            onSelected = onSetMinute
+                            onSelected = onSetMinute,
+                            wrapAround = true
                         )
                     }
                 }
@@ -1911,10 +1975,21 @@ private fun TimeWheelColumn(
     values: List<Int>,
     selected: Int,
     labelFormatter: (Int) -> String,
-    onSelected: (Int) -> Unit
+    onSelected: (Int) -> Unit,
+    wrapAround: Boolean = false,
+    compact: Boolean = false
 ) {
     val selectedIndex = values.indexOf(selected).coerceAtLeast(0)
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = selectedIndex)
+    val itemCount = if (wrapAround) values.size * 400 else values.size
+    val baseIndex = remember(values, wrapAround) {
+        if (wrapAround) {
+            val midpoint = itemCount / 2
+            midpoint - midpoint.floorMod(values.size)
+        } else {
+            0
+        }
+    }
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = baseIndex + selectedIndex)
     val flingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
     val currentSelected by rememberUpdatedState(selected)
     val centeredIndex by remember {
@@ -1924,22 +1999,28 @@ private fun TimeWheelColumn(
             layoutInfo.visibleItemsInfo
                 .minByOrNull { item -> kotlin.math.abs((item.offset + item.size / 2) - viewportCenter) }
                 ?.index
-                ?.coerceIn(0, values.lastIndex)
-                ?: selectedIndex
+                ?.let { if (wrapAround) it.coerceIn(0, itemCount - 1) else it.coerceIn(0, values.lastIndex) }
+                ?: (baseIndex + selectedIndex)
         }
     }
 
-    LaunchedEffect(selectedIndex) {
-        if (!listState.isScrollInProgress && centeredIndex != selectedIndex) {
-            listState.scrollToItem(selectedIndex)
+    LaunchedEffect(selectedIndex, wrapAround, itemCount) {
+        val targetIndex = if (wrapAround) {
+            val currentRound = ((centeredIndex - selectedIndex).toFloat() / values.size).roundToInt()
+            (currentRound * values.size + selectedIndex).coerceIn(0, itemCount - 1)
+        } else {
+            selectedIndex
+        }
+        if (!listState.isScrollInProgress && centeredIndex != targetIndex) {
+            listState.scrollToItem(targetIndex)
         }
     }
 
-    LaunchedEffect(listState, values) {
+    LaunchedEffect(listState, values, wrapAround) {
         snapshotFlow { centeredIndex }
             .distinctUntilChanged()
             .collect { index ->
-                val value = values[index]
+                val value = values[index.floorMod(values.size)]
                 if (value != currentSelected) {
                     onSelected(value)
                 }
@@ -1948,16 +2029,17 @@ private fun TimeWheelColumn(
 
     Box(
         modifier = Modifier
-            .width(86.dp)
+            .width(if (compact) 72.dp else 86.dp)
             .fillMaxHeight()
             .clip(RoundedCornerShape(22.dp))
             .background(Color.White.copy(alpha = 0.055f))
             .drawWithContent {
                 val centerY = size.height / 2f
+                val highlightHeight = if (compact) 34.dp else 40.dp
                 drawRoundRect(
                     color = Color.White.copy(alpha = 0.10f),
-                    topLeft = Offset(6.dp.toPx(), centerY - 20.dp.toPx()),
-                    size = Size(size.width - 12.dp.toPx(), 40.dp.toPx()),
+                    topLeft = Offset(6.dp.toPx(), centerY - highlightHeight.toPx() / 2f),
+                    size = Size(size.width - 12.dp.toPx(), highlightHeight.toPx()),
                     cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx())
                 )
                 drawContent()
@@ -1966,21 +2048,25 @@ private fun TimeWheelColumn(
         LazyColumn(
             state = listState,
             flingBehavior = flingBehavior,
-            contentPadding = PaddingValues(vertical = 51.dp),
+            contentPadding = PaddingValues(vertical = if (compact) 29.dp else 51.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxSize()
         ) {
-            items(values.size) { index ->
-                val value = values[index]
+            items(itemCount) { index ->
+                val value = values[index.floorMod(values.size)]
                 val distance = kotlin.math.abs(index - centeredIndex)
                 Text(
                     text = labelFormatter(value),
                     color = LiquidGlassText.copy(alpha = if (distance == 0) 0.95f else 0.32f),
-                    fontSize = if (distance == 0) 22.sp else 16.sp,
+                    fontSize = if (compact) {
+                        if (distance == 0) 18.sp else 13.sp
+                    } else {
+                        if (distance == 0) 22.sp else 16.sp
+                    },
                     fontFamily = UiFontFamily,
                     textAlign = TextAlign.Center,
                     modifier = Modifier
-                        .height(40.dp)
+                        .height(if (compact) 34.dp else 40.dp)
                         .fillMaxWidth()
                         .wrapContentHeight(Alignment.CenterVertically)
                 )
@@ -2058,7 +2144,7 @@ private fun ClockContent(
     val quietLayout = state.activeThemePreset.profile().quietLayout || state.currentHour24 >= 23 || state.currentHour24 < 7
 
     val alpha by animateFloatAsState(
-        targetValue = (if (state.isBurnInProtectionEnabled) 0.65f else 0.9f) * state.activeThemePreset.profile().dimStrength,
+        targetValue = 0.65f * state.activeThemePreset.profile().dimStrength,
         animationSpec = tween(1000),
         label = "burnInAlpha"
     )
@@ -2321,6 +2407,41 @@ private fun DateDayBlock(state: ClockState, footerFontSize: TextUnit, modifier: 
                 fontSize = footerFontSize,
                 fontFamily = UiFontFamily
             )
+            Text(
+                text = state.location,
+                color = LiquidGlassText.copy(alpha = 0.52f),
+                fontSize = (footerFontSize.value * 0.72f).sp,
+                fontFamily = UiFontFamily,
+                letterSpacing = 1.sp,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun LandscapeDateLocationBlock(state: ClockState, modifier: Modifier = Modifier) {
+    SettingsCardSurface(
+        shape = RoundedCornerShape(26.dp),
+        padding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
+        modifier = modifier.widthIn(min = 190.dp, max = 330.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                text = state.location,
+                color = LiquidGlassText.copy(alpha = 0.82f),
+                fontSize = 16.sp,
+                fontFamily = UiFontFamily,
+                letterSpacing = 1.3.sp,
+                maxLines = 1
+            )
+            Text(
+                text = "${state.date} · ${state.dayOfWeek}",
+                color = LiquidGlassText.copy(alpha = 0.76f),
+                fontSize = 15.sp,
+                fontFamily = UiFontFamily,
+                maxLines = 1
+            )
         }
     }
 }
@@ -2498,6 +2619,13 @@ private fun LandscapeClockContent(
             }
         }
 
+        LandscapeDateLocationBlock(
+            state = state,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(top = 2.dp, start = 2.dp)
+        )
+
         MainTimeDisplay(
             state = state,
             fontFamily = fontFamily,
@@ -2643,13 +2771,29 @@ private fun ThemePresetPill(label: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun DailyAlarmHint(state: ClockState, modifier: Modifier = Modifier) {
+private fun DailyAlarmHint(
+    state: ClockState,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     val progress = state.dailyAlarmProgressFraction()
+    val isSnoozing = state.dailyAlarmSnoozeRemainingSeconds > 0
+    val title = if (isSnoozing) {
+        stringResource(id = R.string.alarm_snooze_hint)
+    } else {
+        stringResource(id = R.string.alarm_enabled_hint)
+    }
+    val detail = if (isSnoozing) {
+        stringResource(id = R.string.alarm_next_in, formatDurationWords(state.dailyAlarmSnoozeRemainingSeconds))
+    } else {
+        stringResource(id = R.string.alarm_next_in, formatDurationWords(state.secondsUntilDailyAlarm()))
+    }
     Box(modifier = modifier) {
         SettingsCardSurface(
             shape = RoundedCornerShape(20.dp),
             padding = PaddingValues(horizontal = 14.dp, vertical = 9.dp),
             modifier = Modifier
+                .clickable(onClick = onClick)
                 .drawWithContent {
                     drawContent()
                     val stroke = 2.4.dp.toPx()
@@ -2672,7 +2816,7 @@ private fun DailyAlarmHint(state: ClockState, modifier: Modifier = Modifier) {
         ) {
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    text = stringResource(id = R.string.alarm_enabled_hint),
+                    text = title,
                     color = LiquidGlassText.copy(alpha = 0.62f),
                     fontSize = 10.sp,
                     fontFamily = UiFontFamily
@@ -2685,7 +2829,7 @@ private fun DailyAlarmHint(state: ClockState, modifier: Modifier = Modifier) {
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = stringResource(id = R.string.alarm_next_in, formatDurationWords(state.secondsUntilDailyAlarm())),
+                    text = detail,
                     color = LiquidGlassText.copy(alpha = 0.48f),
                     fontSize = 9.sp,
                     fontFamily = UiFontFamily
@@ -3099,25 +3243,51 @@ private fun ModeControlPanel(
             }
             when (state.clockMode) {
                 ClockMode.POMODORO -> {
-                    TimerWheelSettingRow(
-                        label = stringResource(id = R.string.mode_focus_duration),
-                        value = state.pomodoroFocusMinutes,
-                        values = (5..90).toList(),
-                        onSelected = onSetPomodoroFocus
-                    )
-                    TimerWheelSettingRow(
-                        label = stringResource(id = R.string.mode_break_duration),
-                        value = state.pomodoroBreakMinutes,
-                        values = (1..30).toList(),
-                        onSelected = onSetPomodoroBreak
-                    )
+                    if (compact) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            TimerWheelSettingRow(
+                                label = stringResource(id = R.string.mode_focus_duration),
+                                value = state.pomodoroFocusMinutes,
+                                values = (5..90).toList(),
+                                onSelected = onSetPomodoroFocus,
+                                compact = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TimerWheelSettingRow(
+                                label = stringResource(id = R.string.mode_break_duration),
+                                value = state.pomodoroBreakMinutes,
+                                values = (1..30).toList(),
+                                onSelected = onSetPomodoroBreak,
+                                compact = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    } else {
+                        TimerWheelSettingRow(
+                            label = stringResource(id = R.string.mode_focus_duration),
+                            value = state.pomodoroFocusMinutes,
+                            values = (5..90).toList(),
+                            onSelected = onSetPomodoroFocus
+                        )
+                        TimerWheelSettingRow(
+                            label = stringResource(id = R.string.mode_break_duration),
+                            value = state.pomodoroBreakMinutes,
+                            values = (1..30).toList(),
+                            onSelected = onSetPomodoroBreak
+                        )
+                    }
                 }
                 ClockMode.COUNTDOWN -> {
                     TimerWheelSettingRow(
                         label = stringResource(id = R.string.mode_countdown_duration),
                         value = state.countdownDurationMinutes,
                         values = (1..180).toList(),
-                        onSelected = onSetCountdown
+                        onSelected = onSetCountdown,
+                        compact = compact
                     )
                 }
                 ClockMode.STOPWATCH -> {
@@ -3146,20 +3316,24 @@ private fun TimerWheelSettingRow(
     label: String,
     value: Int,
     values: List<Int>,
-    onSelected: (Int) -> Unit
+    onSelected: (Int) -> Unit,
+    compact: Boolean = false,
+    modifier: Modifier = Modifier
 ) {
     Column(
+        modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp)
     ) {
         Text(
             text = label,
             color = LiquidGlassText.copy(alpha = 0.66f),
             fontFamily = UiFontFamily,
-            fontSize = 11.sp
+            fontSize = if (compact) 10.sp else 11.sp,
+            maxLines = 1
         )
         Row(
-            modifier = Modifier.height(128.dp),
+            modifier = Modifier.height(if (compact) 92.dp else 128.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -3167,7 +3341,8 @@ private fun TimerWheelSettingRow(
                 values = values,
                 selected = value,
                 labelFormatter = { it.toString().padStart(2, '0') },
-                onSelected = onSelected
+                onSelected = onSelected,
+                compact = compact
             )
         }
     }
@@ -3675,6 +3850,10 @@ private fun ClockState.secondsUntilDailyAlarm(): Int {
 }
 
 private fun ClockState.dailyAlarmProgressFraction(): Float {
+    if (dailyAlarmSnoozeRemainingSeconds > 0) {
+        val snoozeTotalSeconds = 10f * 60f
+        return 1f - (dailyAlarmSnoozeRemainingSeconds / snoozeTotalSeconds)
+    }
     val remaining = secondsUntilDailyAlarm()
     return 1f - (remaining / (24f * 60f * 60f))
 }

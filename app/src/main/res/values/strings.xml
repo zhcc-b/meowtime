@@ -6,7 +6,6 @@
     <string name="settings_particle_weather">Particle Weather</string>
     <string name="settings_particle_weather_auto">Auto (Random every 8h)</string>
     <string name="settings_cats">Realtime Cats</string>
-    <string name="settings_burnin">Burn-in Protection</string>
     <string name="settings_24_hour">24-Hour Format</string>
     <string name="settings_white_noise">Sleep Sound</string>
     <string name="settings_sleep_sound">Sleep Sound</string>
@@ -68,9 +67,10 @@
     <string name="reminder_hourly_chime">%1$s o’clock check-in.</string>
     <string name="reminder_alarm_now">Alarm time.</string>
     <string name="alarm_enabled_hint">Alarm on</string>
+    <string name="alarm_snooze_hint">Snoozing</string>
     <string name="alarm_next_in">in %1$s</string>
     <string name="alarm_dialog_title">Alarm</string>
-    <string name="alarm_dialog_body">The alarm will ring for up to 5 minutes.</string>
+    <string name="alarm_dialog_body">The alarm will ring for up to 9 minutes.</string>
     <string name="alarm_snooze_title">Snooze</string>
     <string name="alarm_snooze_subtitle">10 minutes</string>
     <string name="alarm_dismiss">Turn Off</string>
