@@ -1,6 +1,5 @@
 package com.example.mytime.ui
 
-import com.example.mytime.ui.ParticleWeather
 
 enum class ClockMode {
     CLOCK,

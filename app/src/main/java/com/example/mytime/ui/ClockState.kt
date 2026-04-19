@@ -1,7 +1,6 @@
 package com.example.mytime.ui
 
 import androidx.compose.ui.geometry.Offset
-import com.example.mytime.R
 
 /**
  * 封装时钟所需的所有状态

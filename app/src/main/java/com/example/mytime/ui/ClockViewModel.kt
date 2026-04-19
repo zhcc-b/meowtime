@@ -239,7 +239,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                             recent = recentAutoWeathers
                         )
                         rememberAutoWeather(activeWeather)
-                        nextWeatherChangeEpochSec = nowEpochSec + (8 * 60 * 60)
+                        nextWeatherChangeEpochSec = nowEpochSec + WEATHER_ROTATION_INTERVAL_SEC
                     }
                     if (nextWeatherChangeEpochSec == 0L || nowEpochSec >= nextWeatherChangeEpochSec) {
                         activeWeather = pickRandomWeather(
@@ -249,11 +249,11 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                             recent = recentAutoWeathers
                         )
                         rememberAutoWeather(activeWeather)
-                        nextWeatherChangeEpochSec = nowEpochSec + (8 * 60 * 60)
+                        nextWeatherChangeEpochSec = nowEpochSec + WEATHER_ROTATION_INTERVAL_SEC
                     }
                 } else {
                     activeWeather = _uiState.value.particleWeather
-                    nextWeatherChangeEpochSec = nowEpochSec + (8 * 60 * 60)
+                    nextWeatherChangeEpochSec = nowEpochSec + WEATHER_ROTATION_INTERVAL_SEC
                 }
 
                 var shouldPlayReminder = false
@@ -495,7 +495,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                             message = appContext.getString(R.string.companion_focus_done),
                             triggerSound = true,
                             edgeLightMode = EdgeLightMode.TIMER_ALERT,
-                            edgeLightDurationMs = 5_000L
+                            edgeLightDurationMs = TIMER_ALERT_EDGE_MS
                         )
                     } else {
                         ModeTickResult(
@@ -507,7 +507,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                             message = appContext.getString(R.string.companion_break_done),
                             triggerSound = true,
                             edgeLightMode = EdgeLightMode.TIMER_ALERT,
-                            edgeLightDurationMs = 5_000L
+                            edgeLightDurationMs = TIMER_ALERT_EDGE_MS
                         )
                     }
                 } else {
@@ -530,7 +530,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         message = appContext.getString(R.string.companion_countdown_done),
                         triggerSound = true,
                         edgeLightMode = EdgeLightMode.TIMER_ALERT,
-                        edgeLightDurationMs = 5_000L
+                        edgeLightDurationMs = TIMER_ALERT_EDGE_MS
                     )
                 } else {
                     ModeTickResult(state.copy(countdownRemainingSeconds = nextRemaining))
@@ -538,13 +538,13 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
             }
             ClockMode.STOPWATCH -> {
                 val nextElapsed = state.stopwatchElapsedSeconds + 1
-                val needsBreakNudge = nextElapsed > 0 && nextElapsed % (30 * 60) == 0
+                val needsBreakNudge = nextElapsed > 0 && nextElapsed % BREAK_NUDGE_INTERVAL_SEC == 0
                 ModeTickResult(
                     state.copy(stopwatchElapsedSeconds = nextElapsed),
                     message = if (needsBreakNudge) appContext.getString(R.string.companion_break_nudge) else null,
                     triggerSound = false,
                     edgeLightMode = if (needsBreakNudge) EdgeLightMode.BREAK_REMINDER else null,
-                    edgeLightDurationMs = if (needsBreakNudge) 10_000L else null
+                    edgeLightDurationMs = if (needsBreakNudge) BREAK_NUDGE_EDGE_MS else null
                 )
             }
         }
@@ -832,39 +832,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         clearEdgeLight()
     }
 
-    fun adjustPomodoroFocus(delta: Int) {
-        _uiState.update { state ->
-            val next = (state.pomodoroFocusMinutes + delta).coerceIn(5, 90)
-            state.copy(
-                pomodoroFocusMinutes = next,
-                pomodoroRemainingSeconds = if (!state.timerRunning && state.pomodoroPhase == PomodoroPhase.FOCUS) next * 60 else state.pomodoroRemainingSeconds
-            )
-        }
-        persistSetting { this[PreferenceKeys.pomodoroFocusMinutes] = _uiState.value.pomodoroFocusMinutes }
-    }
-
-    fun adjustPomodoroBreak(delta: Int) {
-        _uiState.update { state ->
-            val next = (state.pomodoroBreakMinutes + delta).coerceIn(1, 30)
-            state.copy(
-                pomodoroBreakMinutes = next,
-                pomodoroRemainingSeconds = if (!state.timerRunning && state.pomodoroPhase == PomodoroPhase.BREAK) next * 60 else state.pomodoroRemainingSeconds
-            )
-        }
-        persistSetting { this[PreferenceKeys.pomodoroBreakMinutes] = _uiState.value.pomodoroBreakMinutes }
-    }
-
-    fun adjustCountdownDuration(delta: Int) {
-        _uiState.update { state ->
-            val next = (state.countdownDurationMinutes + delta).coerceIn(1, 180)
-            state.copy(
-                countdownDurationMinutes = next,
-                countdownRemainingSeconds = if (!state.timerRunning) next * 60 else state.countdownRemainingSeconds
-            )
-        }
-        persistSetting { this[PreferenceKeys.countdownDurationMinutes] = _uiState.value.countdownDurationMinutes }
-    }
-
     fun setPomodoroFocusMinutes(minutes: Int) {
         val next = minutes.coerceIn(5, 90)
         if (_uiState.value.pomodoroFocusMinutes == next) return
@@ -973,26 +940,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         _uiState.update { it.copy(dailyAlarmEnabled = enabled) }
         if (!enabled) {
             dismissDailyAlarm()
-            dailyAlarmSnoozeJob?.cancel()
-            dailyAlarmSnoozeJob = null
-            dailyAlarmSnoozeDeadlineElapsedMs = null
-            _uiState.update { it.copy(dailyAlarmSnoozeRemainingSeconds = 0) }
         }
         persistSetting { this[PreferenceKeys.dailyAlarmEnabled] = enabled }
-    }
-
-    fun adjustDailyAlarmHour(delta: Int) {
-        _uiState.update { state ->
-            state.copy(dailyAlarmHour = (state.dailyAlarmHour + delta).floorMod(24))
-        }
-        persistSetting { this[PreferenceKeys.dailyAlarmHour] = _uiState.value.dailyAlarmHour }
-    }
-
-    fun adjustDailyAlarmMinute(delta: Int) {
-        _uiState.update { state ->
-            state.copy(dailyAlarmMinute = (state.dailyAlarmMinute + delta).floorMod(60))
-        }
-        persistSetting { this[PreferenceKeys.dailyAlarmMinute] = _uiState.value.dailyAlarmMinute }
     }
 
     fun setDailyAlarmHour(hour: Int) {
@@ -1033,9 +982,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     }
 
     fun dismissDailyAlarm() {
-        dailyAlarmSnoozeJob?.cancel()
-        dailyAlarmSnoozeJob = null
-        dailyAlarmSnoozeDeadlineElapsedMs = null
+        clearDailyAlarmSnooze()
         stopDailyAlarmSound()
         clearEdgeLight()
         _uiState.update {
@@ -1045,6 +992,12 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                 companionMessage = appContext.getString(R.string.alarm_dismissed_message)
             )
         }
+    }
+
+    private fun clearDailyAlarmSnooze() {
+        dailyAlarmSnoozeJob?.cancel()
+        dailyAlarmSnoozeJob = null
+        dailyAlarmSnoozeDeadlineElapsedMs = null
     }
 
     fun setThemePreset(preset: ThemePreset) {
@@ -1063,13 +1016,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         if (durationMs != null) {
             edgeLightJob = viewModelScope.launch {
                 delay(durationMs)
-                _uiState.update { state ->
-                    if (state.clockMode == ClockMode.STOPWATCH && state.timerRunning) {
-                        state.copy(edgeLightMode = EdgeLightMode.STOPWATCH_ACTIVE)
-                    } else {
-                        state.copy(edgeLightMode = null)
-                    }
-                }
+                _uiState.update { state -> state.withClearedEdgeLight() }
             }
         } else {
             edgeLightJob = null
@@ -1079,12 +1026,14 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private fun clearEdgeLight() {
         edgeLightJob?.cancel()
         edgeLightJob = null
-        _uiState.update { state ->
-            if (state.clockMode == ClockMode.STOPWATCH && state.timerRunning) {
-                state.copy(edgeLightMode = EdgeLightMode.STOPWATCH_ACTIVE)
-            } else {
-                state.copy(edgeLightMode = null)
-            }
+        _uiState.update { state -> state.withClearedEdgeLight() }
+    }
+
+    private fun ClockState.withClearedEdgeLight(): ClockState {
+        return if (clockMode == ClockMode.STOPWATCH && timerRunning) {
+            copy(edgeLightMode = EdgeLightMode.STOPWATCH_ACTIVE)
+        } else {
+            copy(edgeLightMode = null)
         }
     }
 
@@ -1255,6 +1204,10 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
 private const val SLEEP_SOUND_DURATION_MS = 60L * 60L * 1000L
 private const val DAILY_ALARM_RING_MS = 9L * 60L * 1000L
 private const val DAILY_ALARM_SNOOZE_MS = 10L * 60L * 1000L
+private const val WEATHER_ROTATION_INTERVAL_SEC = 8L * 60L * 60L
+private const val TIMER_ALERT_EDGE_MS = 5_000L
+private const val BREAK_NUDGE_INTERVAL_SEC = 30 * 60
+private const val BREAK_NUDGE_EDGE_MS = 10_000L
 
 private fun Offset.sanitize(): Offset = Offset(
     x = x.takeIf { it.isFinite() } ?: 0f,

@@ -79,25 +79,18 @@ class MainActivity : ComponentActivity() {
         setContent {
             MytimeTheme {
                 val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+                val dismissLocationDialog = {
+                    locationDialogMode = null
+                    viewModel.fetchLocation(hasLocationPermission = false)
+                }
                 LaunchedEffect(uiState.isSettingsVisible) {
                     window.decorView.post { applyImmersiveMode() }
                 }
                 if (locationDialogMode != null) {
                     AlertDialog(
-                        onDismissRequest = {
-                            locationDialogMode = null
-                            viewModel.fetchLocation(hasLocationPermission = false)
-                        },
+                        onDismissRequest = dismissLocationDialog,
                         title = {
-                            Text(
-                                getString(
-                                    when (locationDialogMode) {
-                                        LocationDialogMode.OPEN_SETTINGS -> R.string.location_permission_title
-                                        LocationDialogMode.PRE_PERMISSION -> R.string.location_permission_title
-                                        else -> R.string.location_permission_title
-                                    }
-                                )
-                            )
+                            Text(getString(R.string.location_permission_title))
                         },
                         text = {
                             Text(
@@ -133,10 +126,7 @@ class MainActivity : ComponentActivity() {
                         },
                         dismissButton = {
                             TextButton(
-                                onClick = {
-                                    locationDialogMode = null
-                                    viewModel.fetchLocation(hasLocationPermission = false)
-                                }
+                                onClick = dismissLocationDialog
                             ) {
                                 Text(getString(R.string.location_permission_not_now))
                             }

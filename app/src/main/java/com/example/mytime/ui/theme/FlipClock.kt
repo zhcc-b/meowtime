@@ -36,9 +36,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
@@ -64,7 +62,6 @@ import com.example.mytime.R
 import com.example.mytime.ui.ClockMode
 import com.example.mytime.ui.ClockFont
 import com.example.mytime.ui.ClockState
-import com.example.mytime.ui.EdgeLightMode
 import com.example.mytime.ui.ParticleWeather
 import com.example.mytime.ui.PomodoroPhase
 import com.example.mytime.ui.SleepSoundMode
@@ -72,11 +69,9 @@ import com.example.mytime.ui.ThemePreset
 import com.example.mytime.ui.UiFontFamily
 import com.example.mytime.ui.profile
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.isActive
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.roundToInt
-import kotlin.random.Random
 
 @Composable
 fun FlipClockScreen(
@@ -106,7 +101,6 @@ fun FlipClockScreen(
     onSelectSleepSound: (SleepSoundMode) -> Unit,
     onToggleWhiteNoise: (Boolean) -> Unit
 ) {
-    val currentFont = state.selectedFont.family
     var timeRect by remember { mutableStateOf(RectF()) }
     var overlayInfo by remember { mutableStateOf<OverlayInfo?>(null) }
     var shouldScrollToAlarmSettings by remember { mutableStateOf(false) }
@@ -177,7 +171,6 @@ fun FlipClockScreen(
 
         ClockContent(
             state = state,
-            fontFamily = currentFont,
             onPlayAudio = onPlayAudio,
             onToggleSettings = onOpenSettings,
             onSetClockMode = onSetClockMode,
@@ -262,61 +255,6 @@ fun FlipClockScreen(
     }
 }
 
-@Composable
-fun SeamlessParticleLayer(weather: ParticleWeather) {
-    val particles = remember(weather) { List(weather.particleCount) { WeatherParticle(weather) } }
-    val atmosphereBlobs = remember(weather) { List(weather.atmosphereBlobCount) { AtmosphereBlob(weather) } }
-    var elapsedMillis by remember { mutableStateOf(0L) }
-    LaunchedEffect(Unit) {
-        val startTime = withFrameNanos { it } / 1_000_000
-        while (isActive) {
-            withFrameNanos { frameTimeNanos ->
-                elapsedMillis = (frameTimeNanos / 1_000_000) - startTime
-            }
-        }
-    }
-
-    Canvas(modifier = Modifier.fillMaxSize()) {
-        val seconds = elapsedMillis / 1000f
-        drawWeatherBackdrop(weather = weather, seconds = seconds)
-        drawAtmosphereBlobs(weather = weather, seconds = seconds, blobs = atmosphereBlobs)
-        drawFogVeils(weather = weather, seconds = seconds)
-        drawWeatherParticles(weather = weather, seconds = seconds, particles = particles)
-    }
-}
-
-private data class WeatherPalette(
-    val skyTop: Color,
-    val skyMid: Color,
-    val skyBottom: Color,
-    val glow: Color,
-    val cloud: Color,
-    val fog: Color,
-    val accent: Color
-)
-
-private data class WeatherParticle(
-    val startX: Float,
-    val startY: Float,
-    val speed: Float,
-    val size: Float,
-    val alpha: Float,
-    val length: Float,
-    val swayAmplitude: Float,
-    val swayFrequency: Float,
-    val phase: Float
-)
-
-private data class AtmosphereBlob(
-    val startX: Float,
-    val startY: Float,
-    val widthFactor: Float,
-    val heightFactor: Float,
-    val alpha: Float,
-    val speed: Float,
-    val phase: Float
-)
-
 private val LiquidGlassTint = Color(0xFFDCEBFF)
 private val LiquidGlassCool = Color(0xFFA8CDFF)
 private val LiquidGlassShadow = Color(0xFF060E18)
@@ -326,17 +264,6 @@ private data class OverlayInfo(
     val title: String,
     val body: String
 )
-
-private fun ClockState.effectiveEdgeLightMode(): EdgeLightMode? {
-    edgeLightMode?.let { return it }
-    return when (activeThemePreset) {
-        ThemePreset.FOCUS -> EdgeLightMode.AMBIENT_FOCUS
-        ThemePreset.PLAYFUL -> EdgeLightMode.AMBIENT_PLAYFUL
-        ThemePreset.SERENE -> EdgeLightMode.AMBIENT_SERENE
-        ThemePreset.NIGHT -> EdgeLightMode.AMBIENT_NIGHT
-        else -> null
-    }
-}
 
 @Composable
 private fun ExplanationOverlay(
@@ -384,919 +311,9 @@ private fun ExplanationOverlay(
     }
 }
 
-@Composable
-private fun EdgeLightOverlay(
-    mode: EdgeLightMode?,
-    modifier: Modifier = Modifier
-) {
-    if (mode == null) return
 
-    val transition = rememberInfiniteTransition(label = "edge_light")
-    val colorShift by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = when (mode) {
-                    EdgeLightMode.BREAK_REMINDER -> 3600
-                    EdgeLightMode.TIMER_ALERT -> 2400
-                    EdgeLightMode.STOPWATCH_ACTIVE -> 5400
-                    EdgeLightMode.AMBIENT_FOCUS -> 7200
-                    EdgeLightMode.AMBIENT_PLAYFUL -> 5600
-                    EdgeLightMode.AMBIENT_SERENE -> 10000
-                    EdgeLightMode.AMBIENT_NIGHT -> 16000
-                },
-                easing = LinearEasing
-            )
-        ),
-        label = "edge_color_shift"
-    )
-    val pulse by transition.animateFloat(
-        initialValue = 0.88f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = when (mode) {
-                    EdgeLightMode.BREAK_REMINDER -> 1000
-                    EdgeLightMode.TIMER_ALERT -> 760
-                    EdgeLightMode.STOPWATCH_ACTIVE -> 1600
-                    EdgeLightMode.AMBIENT_FOCUS -> 2600
-                    EdgeLightMode.AMBIENT_PLAYFUL -> 1800
-                    EdgeLightMode.AMBIENT_SERENE -> 3200
-                    EdgeLightMode.AMBIENT_NIGHT -> 4800
-                },
-                easing = EaseInOutSine
-            ),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "edge_pulse"
-    )
-    val alertFlash by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 430, easing = EaseInOutSine),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "edge_alert_flash"
-    )
 
-    val overlayAlpha = when (mode) {
-        EdgeLightMode.BREAK_REMINDER -> 0.94f
-        EdgeLightMode.TIMER_ALERT -> 1f
-        EdgeLightMode.STOPWATCH_ACTIVE -> 0.86f
-        EdgeLightMode.AMBIENT_FOCUS -> 0.42f
-        EdgeLightMode.AMBIENT_PLAYFUL -> 0.62f
-        EdgeLightMode.AMBIENT_SERENE -> 0.38f
-        EdgeLightMode.AMBIENT_NIGHT -> 0.28f
-    }
-    val palette = when (mode) {
-        EdgeLightMode.BREAK_REMINDER -> listOf(
-            Color(0xFF7CFF74),
-            Color(0xFF5DEBFF),
-            Color(0xFF5D76FF),
-            Color(0xFFC46BFF),
-            Color(0xFFFF5FB5),
-            Color(0xFFFF9C43),
-            Color(0xFF7CFF74)
-        )
-        EdgeLightMode.TIMER_ALERT -> listOf(
-            Color(0xFF82FF73),
-            Color(0xFF62ECFF),
-            Color(0xFF4E77FF),
-            Color(0xFFC56EFF),
-            Color(0xFFFF6DB9),
-            Color(0xFFFFA34E),
-            Color(0xFF82FF73)
-        )
-        EdgeLightMode.STOPWATCH_ACTIVE -> listOf(
-            Color(0xFF8EF67A),
-            Color(0xFF76E7FF),
-            Color(0xFF6491FF),
-            Color(0xFFD08AFF),
-            Color(0xFFFF8DCA),
-            Color(0xFFFFB86E),
-            Color(0xFF8EF67A)
-        )
-        // FOCUS: crisp steel-cyan → electric-blue → icy-white → cobalt — precision & alertness
-        EdgeLightMode.AMBIENT_FOCUS -> listOf(
-            Color(0xFF00C8FF),
-            Color(0xFF00A3FF),
-            Color(0xFF2979FF),
-            Color(0xFF00E5FF),
-            Color(0xFFB3EEFF),
-            Color(0xFF2979FF),
-            Color(0xFF00C8FF)
-        )
-        // PLAYFUL: full-spectrum pop — warm coral → gold → lime → cyan → violet → pink loop
-        EdgeLightMode.AMBIENT_PLAYFUL -> listOf(
-            Color(0xFFFF6B6B),
-            Color(0xFFFFD93D),
-            Color(0xFF6BCB77),
-            Color(0xFF4ECDC4),
-            Color(0xFF45B7D1),
-            Color(0xFF9B59B6),
-            Color(0xFFFF6B6B)
-        )
-        // SERENE: soft lavender → rose-water → mint → sky — calm & balanced
-        EdgeLightMode.AMBIENT_SERENE -> listOf(
-            Color(0xFFB8A5E8),
-            Color(0xFFE8A5C4),
-            Color(0xFFA5D8C8),
-            Color(0xFFB8D8F0),
-            Color(0xFFD4B8E8),
-            Color(0xFFE8C4B8),
-            Color(0xFFB8A5E8)
-        )
-        // NIGHT: deep indigo → midnight violet → dim teal — dim & atmospheric
-        EdgeLightMode.AMBIENT_NIGHT -> listOf(
-            Color(0xFF1A1A4E),
-            Color(0xFF2D1B69),
-            Color(0xFF11998E),
-            Color(0xFF1A1A4E),
-            Color(0xFF38006B),
-            Color(0xFF0D3B5E),
-            Color(0xFF1A1A4E)
-        )
-    }
 
-    // Interpolates across the cyclic palette at evenly-spaced display positions offset by
-    // colorShift.  Because we sample rather than sort shifted stops, the sweep gradient
-    // has no seam at any point on the perimeter — the only requirement is that
-    // colors.first() == colors.last() (all palettes above satisfy this).
-    fun shiftedStops(colors: List<Color>, alphaMultiplier: Float): Array<Pair<Float, Color>> {
-        val alpha = (alphaMultiplier * overlayAlpha * pulse).coerceIn(0f, 1f)
-        val n = (colors.size - 1).coerceAtLeast(1)
-        val outCount = 48  // enough stops for smooth sweep without hurting perf
-        return Array(outCount + 1) { i ->
-            val displayPos = i.toFloat() / outCount          // 0.0 … 1.0
-            val palettePos  = (displayPos + colorShift) % 1f // cyclic sample offset
-            val exactIdx    = palettePos * n
-            val lo = exactIdx.toInt().coerceIn(0, n - 1)
-            val hi = (lo + 1).coerceAtMost(n)
-            val frac = exactIdx - lo
-            val c0 = colors[lo]; val c1 = colors[hi]
-            val r = c0.red   + (c1.red   - c0.red)   * frac
-            val g = c0.green + (c1.green - c0.green) * frac
-            val b = c0.blue  + (c1.blue  - c0.blue)  * frac
-            displayPos to Color(r, g, b, alpha)
-        }
-    }
-
-    Canvas(modifier = modifier) {
-        fun safeAlpha(value: Float): Float = value.coerceIn(0f, 1f)
-        val inset = 6.dp.toPx()
-        val outerStroke = when (mode) {
-            EdgeLightMode.TIMER_ALERT -> 11.dp.toPx()
-            EdgeLightMode.BREAK_REMINDER -> 10.dp.toPx()
-            EdgeLightMode.STOPWATCH_ACTIVE -> 9.dp.toPx()
-            EdgeLightMode.AMBIENT_FOCUS -> 7.dp.toPx()
-            EdgeLightMode.AMBIENT_PLAYFUL -> 8.dp.toPx()
-            EdgeLightMode.AMBIENT_SERENE -> 6.dp.toPx()
-            EdgeLightMode.AMBIENT_NIGHT -> 4.dp.toPx()
-        }
-        val glowStroke = when (mode) {
-            EdgeLightMode.AMBIENT_NIGHT -> outerStroke * 2.8f
-            EdgeLightMode.AMBIENT_SERENE -> outerStroke * 2.4f
-            EdgeLightMode.AMBIENT_FOCUS -> outerStroke * 2.2f
-            else -> outerStroke * 2.6f
-        }
-        val coreStroke = outerStroke * 0.26f
-        val haloStroke = outerStroke * 1.4f
-        val bloomStroke = when (mode) {
-            EdgeLightMode.TIMER_ALERT, EdgeLightMode.BREAK_REMINDER -> outerStroke * 7.2f
-            EdgeLightMode.STOPWATCH_ACTIVE -> outerStroke * 6.2f
-            else -> outerStroke * 8.4f
-        }
-        val cornerRadiusPx = 42.dp.toPx()
-        val corner = CornerRadius(cornerRadiusPx, cornerRadiusPx)
-        val rectTopLeft = Offset(inset, inset)
-        val rectSize = Size(size.width - inset * 2f, size.height - inset * 2f)
-        if (mode == EdgeLightMode.TIMER_ALERT) {
-            val warm = Color(0xFFFF4A3D)
-            val hot = Color(0xFFFFD36A)
-            val flash = alertFlash.coerceIn(0f, 1f)
-            val alertColor = Color(
-                red = warm.red + (hot.red - warm.red) * flash,
-                green = warm.green + (hot.green - warm.green) * flash,
-                blue = warm.blue + (hot.blue - warm.blue) * flash,
-                alpha = 1f
-            )
-            val flashAlpha = 0.42f + flash * 0.58f
-
-            drawRect(
-                color = alertColor.copy(alpha = safeAlpha(0.055f + flash * 0.055f))
-            )
-            listOf(
-                outerStroke * 8.0f to 0.12f,
-                outerStroke * 5.2f to 0.22f,
-                outerStroke * 3.0f to 0.34f,
-                outerStroke * 1.5f to 0.52f
-            ).forEach { (width, alpha) ->
-                drawRoundRect(
-                    color = alertColor.copy(alpha = safeAlpha(alpha * flashAlpha)),
-                    topLeft = rectTopLeft,
-                    size = rectSize,
-                    cornerRadius = corner,
-                    style = Stroke(width = width)
-                )
-            }
-            drawRoundRect(
-                color = alertColor.copy(alpha = safeAlpha(0.92f * flashAlpha)),
-                topLeft = rectTopLeft,
-                size = rectSize,
-                cornerRadius = corner,
-                style = Stroke(width = outerStroke * (1.08f + flash * 0.18f))
-            )
-            drawRoundRect(
-                color = Color.White.copy(alpha = safeAlpha(0.42f + flash * 0.42f)),
-                topLeft = rectTopLeft,
-                size = rectSize,
-                cornerRadius = corner,
-                style = Stroke(width = coreStroke * (1.1f + flash * 0.3f))
-            )
-            return@Canvas
-        }
-        val glowBrush = Brush.sweepGradient(
-            colorStops = shiftedStops(palette, when (mode) {
-                EdgeLightMode.AMBIENT_NIGHT -> 0.20f
-                EdgeLightMode.AMBIENT_SERENE -> 0.30f
-                EdgeLightMode.AMBIENT_FOCUS -> 0.32f
-                else -> 0.36f
-            }),
-            center = center
-        )
-        val edgeBrush = Brush.sweepGradient(
-            colorStops = shiftedStops(palette, when (mode) {
-                EdgeLightMode.AMBIENT_SERENE -> 0.68f
-                EdgeLightMode.AMBIENT_NIGHT -> 0.50f
-                EdgeLightMode.AMBIENT_FOCUS -> 0.80f
-                else -> 0.96f
-            }),
-            center = center
-        )
-        val bloomAlpha = when (mode) {
-            EdgeLightMode.AMBIENT_NIGHT -> 0.032f
-            EdgeLightMode.AMBIENT_SERENE -> 0.044f
-            EdgeLightMode.AMBIENT_FOCUS -> 0.050f
-            EdgeLightMode.AMBIENT_PLAYFUL -> 0.064f
-            else -> 0.082f
-        }
-        listOf(
-            bloomStroke to bloomAlpha * 0.34f,
-            bloomStroke * 0.72f to bloomAlpha * 0.58f,
-            bloomStroke * 0.48f to bloomAlpha * 0.86f,
-            bloomStroke * 0.30f to bloomAlpha
-        ).forEach { (width, alpha) ->
-            drawRoundRect(
-                brush = Brush.sweepGradient(
-                    colorStops = shiftedStops(palette, alpha),
-                    center = center
-                ),
-                topLeft = rectTopLeft,
-                size = rectSize,
-                cornerRadius = corner,
-                style = Stroke(width = width)
-            )
-        }
-        drawRoundRect(
-            brush = glowBrush,
-            topLeft = rectTopLeft,
-            size = rectSize,
-            cornerRadius = corner,
-            style = Stroke(width = glowStroke)
-        )
-        drawRoundRect(
-            brush = glowBrush,
-            topLeft = rectTopLeft,
-            size = rectSize,
-            cornerRadius = corner,
-            style = Stroke(width = haloStroke)
-        )
-        drawRoundRect(
-            brush = edgeBrush,
-            topLeft = rectTopLeft,
-            size = rectSize,
-            cornerRadius = corner,
-            style = Stroke(width = outerStroke)
-        )
-        drawRoundRect(
-            color = Color.White.copy(alpha = safeAlpha(when (mode) {
-                EdgeLightMode.AMBIENT_SERENE -> 0.18f * overlayAlpha * pulse
-                EdgeLightMode.AMBIENT_NIGHT -> 0.10f * overlayAlpha * pulse
-                EdgeLightMode.AMBIENT_FOCUS -> 0.28f * overlayAlpha * pulse
-                else -> 0.38f * overlayAlpha * pulse
-            })),
-            topLeft = rectTopLeft,
-            size = rectSize,
-            cornerRadius = corner,
-            style = Stroke(width = coreStroke)
-        )
-        drawRoundRect(
-            color = Color.White.copy(alpha = safeAlpha(when (mode) {
-                EdgeLightMode.AMBIENT_SERENE -> 0.06f * overlayAlpha
-                EdgeLightMode.AMBIENT_NIGHT -> 0.03f * overlayAlpha
-                EdgeLightMode.AMBIENT_FOCUS -> 0.10f * overlayAlpha
-                else -> 0.12f * overlayAlpha
-            })),
-            topLeft = rectTopLeft,
-            size = rectSize,
-            cornerRadius = corner,
-            style = Stroke(width = 1.dp.toPx())
-        )
-    }
-}
-
-private fun AtmosphereBlob(weather: ParticleWeather): AtmosphereBlob {
-    return when (weather) {
-        ParticleWeather.SUNNY -> AtmosphereBlob(
-            startX = Random.nextFloat(),
-            startY = 0.08f + Random.nextFloat() * 0.22f,
-            widthFactor = 0.20f + Random.nextFloat() * 0.18f,
-            heightFactor = 0.07f + Random.nextFloat() * 0.05f,
-            alpha = 0.08f + Random.nextFloat() * 0.08f,
-            speed = 0.004f + Random.nextFloat() * 0.006f,
-            phase = Random.nextFloat() * 6.28f
-        )
-        ParticleWeather.CLOUDY -> AtmosphereBlob(
-            startX = Random.nextFloat(),
-            startY = 0.08f + Random.nextFloat() * 0.36f,
-            widthFactor = 0.26f + Random.nextFloat() * 0.24f,
-            heightFactor = 0.10f + Random.nextFloat() * 0.08f,
-            alpha = 0.11f + Random.nextFloat() * 0.12f,
-            speed = 0.003f + Random.nextFloat() * 0.006f,
-            phase = Random.nextFloat() * 6.28f
-        )
-        ParticleWeather.FOG -> AtmosphereBlob(
-            startX = Random.nextFloat(),
-            startY = 0.20f + Random.nextFloat() * 0.50f,
-            widthFactor = 0.34f + Random.nextFloat() * 0.28f,
-            heightFactor = 0.11f + Random.nextFloat() * 0.08f,
-            alpha = 0.10f + Random.nextFloat() * 0.10f,
-            speed = 0.002f + Random.nextFloat() * 0.004f,
-            phase = Random.nextFloat() * 6.28f
-        )
-        else -> AtmosphereBlob(
-            startX = Random.nextFloat(),
-            startY = 0.04f + Random.nextFloat() * 0.34f,
-            widthFactor = 0.24f + Random.nextFloat() * 0.24f,
-            heightFactor = 0.10f + Random.nextFloat() * 0.08f,
-            alpha = 0.10f + Random.nextFloat() * 0.12f,
-            speed = 0.004f + Random.nextFloat() * 0.008f,
-            phase = Random.nextFloat() * 6.28f
-        )
-    }
-}
-
-private fun WeatherParticle(weather: ParticleWeather): WeatherParticle {
-    return when (weather) {
-        ParticleWeather.SUNNY -> WeatherParticle(
-            startX = Random.nextFloat(),
-            startY = Random.nextFloat(),
-            speed = 0.015f + Random.nextFloat() * 0.025f,
-            size = 0.8f + Random.nextFloat() * 1.6f,
-            alpha = 0.04f + Random.nextFloat() * 0.08f,
-            length = 0f,
-            swayAmplitude = 0.01f + Random.nextFloat() * 0.02f,
-            swayFrequency = 0.6f + Random.nextFloat() * 1.1f,
-            phase = Random.nextFloat() * 6.28f
-        )
-        ParticleWeather.CLOUDY -> WeatherParticle(
-            startX = Random.nextFloat(),
-            startY = Random.nextFloat(),
-            speed = 0.02f + Random.nextFloat() * 0.03f,
-            size = 0.8f + Random.nextFloat() * 1.2f,
-            alpha = 0.03f + Random.nextFloat() * 0.07f,
-            length = 10f + Random.nextFloat() * 8f,
-            swayAmplitude = 0.008f + Random.nextFloat() * 0.014f,
-            swayFrequency = 0.6f + Random.nextFloat() * 1.0f,
-            phase = Random.nextFloat() * 6.28f
-        )
-        ParticleWeather.FOG -> WeatherParticle(
-            startX = Random.nextFloat(),
-            startY = 0.45f + Random.nextFloat() * 0.45f,
-            speed = 0.01f + Random.nextFloat() * 0.02f,
-            size = 1.2f + Random.nextFloat() * 2.0f,
-            alpha = 0.03f + Random.nextFloat() * 0.06f,
-            length = 16f + Random.nextFloat() * 18f,
-            swayAmplitude = 0.01f + Random.nextFloat() * 0.018f,
-            swayFrequency = 0.5f + Random.nextFloat() * 0.8f,
-            phase = Random.nextFloat() * 6.28f
-        )
-        ParticleWeather.RAIN -> WeatherParticle(
-            startX = Random.nextFloat(),
-            startY = Random.nextFloat(),
-            speed = 0.55f + Random.nextFloat() * 0.55f,
-            size = 1.8f + Random.nextFloat() * 2.1f,
-            alpha = 0.15f + Random.nextFloat() * 0.35f,
-            length = 20f + Random.nextFloat() * 18f,
-            swayAmplitude = 0.005f + Random.nextFloat() * 0.015f,
-            swayFrequency = 1f + Random.nextFloat() * 1.2f,
-            phase = Random.nextFloat() * 6.28f
-        )
-        ParticleWeather.DRIZZLE -> WeatherParticle(
-            startX = Random.nextFloat(),
-            startY = Random.nextFloat(),
-            speed = 0.35f + Random.nextFloat() * 0.35f,
-            size = 1.2f + Random.nextFloat() * 1.4f,
-            alpha = 0.1f + Random.nextFloat() * 0.2f,
-            length = 14f + Random.nextFloat() * 12f,
-            swayAmplitude = 0.01f + Random.nextFloat() * 0.02f,
-            swayFrequency = 1.2f + Random.nextFloat(),
-            phase = Random.nextFloat() * 6.28f
-        )
-        ParticleWeather.SNOW -> WeatherParticle(
-            startX = Random.nextFloat(),
-            startY = Random.nextFloat(),
-            speed = 0.018f + Random.nextFloat() * 0.045f,
-            size = 2.4f + Random.nextFloat() * 4.4f,
-            alpha = 0.18f + Random.nextFloat() * 0.45f,
-            length = 0f,
-            swayAmplitude = 0.016f + Random.nextFloat() * 0.038f,
-            swayFrequency = 0.7f + Random.nextFloat() * 1.4f,
-            phase = Random.nextFloat() * 6.28f
-        )
-        ParticleWeather.BLIZZARD -> WeatherParticle(
-            startX = Random.nextFloat(),
-            startY = Random.nextFloat(),
-            speed = 0.10f + Random.nextFloat() * 0.14f,
-            size = 2.0f + Random.nextFloat() * 3.6f,
-            alpha = 0.16f + Random.nextFloat() * 0.32f,
-            length = 0f,
-            swayAmplitude = 0.05f + Random.nextFloat() * 0.06f,
-            swayFrequency = 2.2f + Random.nextFloat() * 1.4f,
-            phase = Random.nextFloat() * 6.28f
-        )
-        ParticleWeather.HAIL -> WeatherParticle(
-            startX = Random.nextFloat(),
-            startY = Random.nextFloat(),
-            speed = 0.65f + Random.nextFloat() * 0.85f,
-            size = 2.4f + Random.nextFloat() * 3.8f,
-            alpha = 0.2f + Random.nextFloat() * 0.5f,
-            length = 0f,
-            swayAmplitude = 0.002f + Random.nextFloat() * 0.008f,
-            swayFrequency = 0.5f + Random.nextFloat(),
-            phase = Random.nextFloat() * 6.28f
-        )
-        ParticleWeather.WIND -> WeatherParticle(
-            startX = Random.nextFloat(),
-            startY = Random.nextFloat(),
-            speed = 0.16f + Random.nextFloat() * 0.35f,
-            size = 0.7f + Random.nextFloat() * 1.4f,
-            alpha = 0.1f + Random.nextFloat() * 0.28f,
-            length = 12f + Random.nextFloat() * 20f,
-            swayAmplitude = 0.006f + Random.nextFloat() * 0.02f,
-            swayFrequency = 0.8f + Random.nextFloat() * 1.3f,
-            phase = Random.nextFloat() * 6.28f
-        )
-    }
-}
-
-private val ParticleWeather.particleCount: Int
-    get() = when (this) {
-        ParticleWeather.SUNNY -> 18
-        ParticleWeather.CLOUDY -> 24
-        ParticleWeather.FOG -> 30
-        ParticleWeather.RAIN -> 120
-        ParticleWeather.DRIZZLE -> 100
-        ParticleWeather.SNOW -> 80
-        ParticleWeather.BLIZZARD -> 130
-        ParticleWeather.HAIL -> 110
-        ParticleWeather.WIND -> 90
-    }
-
-private val ParticleWeather.atmosphereBlobCount: Int
-    get() = when (this) {
-        ParticleWeather.SUNNY -> 5
-        ParticleWeather.CLOUDY -> 7
-        ParticleWeather.FOG -> 8
-        ParticleWeather.RAIN -> 8
-        ParticleWeather.DRIZZLE -> 7
-        ParticleWeather.SNOW -> 7
-        ParticleWeather.BLIZZARD -> 10
-        ParticleWeather.HAIL -> 8
-        ParticleWeather.WIND -> 6
-    }
-
-private val ParticleWeather.palette: WeatherPalette
-    get() = when (this) {
-        ParticleWeather.SUNNY -> WeatherPalette(
-            skyTop = Color(0xFF4A8DFF),
-            skyMid = Color(0xFF77B7FF),
-            skyBottom = Color(0xFFF2C98A),
-            glow = Color(0xFFFFE9A8),
-            cloud = Color(0xFFF8F3EA),
-            fog = Color(0x66FFF3D6),
-            accent = Color(0xFFFFF7DA)
-        )
-        ParticleWeather.CLOUDY -> WeatherPalette(
-            skyTop = Color(0xFF52677A),
-            skyMid = Color(0xFF75889C),
-            skyBottom = Color(0xFFB1B6BE),
-            glow = Color(0x88E7EEF7),
-            cloud = Color(0xFFD8DEE6),
-            fog = Color(0x66DDE5EE),
-            accent = Color(0xFFF0F6FF)
-        )
-        ParticleWeather.FOG -> WeatherPalette(
-            skyTop = Color(0xFF67737F),
-            skyMid = Color(0xFF8A949D),
-            skyBottom = Color(0xFFBCC4CA),
-            glow = Color(0x55E7EDF2),
-            cloud = Color(0xCCDCE3E8),
-            fog = Color(0x88EFF4F6),
-            accent = Color(0xFFF5F8FA)
-        )
-        ParticleWeather.RAIN -> WeatherPalette(
-            skyTop = Color(0xFF24364C),
-            skyMid = Color(0xFF3A4E66),
-            skyBottom = Color(0xFF65788B),
-            glow = Color(0x444C76B5),
-            cloud = Color(0xFFBBC7D6),
-            fog = Color(0x445B6E86),
-            accent = Color(0xFFC7E1FF)
-        )
-        ParticleWeather.DRIZZLE -> WeatherPalette(
-            skyTop = Color(0xFF314760),
-            skyMid = Color(0xFF536A80),
-            skyBottom = Color(0xFF8A9BAB),
-            glow = Color(0x334F7AAD),
-            cloud = Color(0xFFD1D9E1),
-            fog = Color(0x446E8195),
-            accent = Color(0xFFD7E8FF)
-        )
-        ParticleWeather.SNOW -> WeatherPalette(
-            skyTop = Color(0xFF50667B),
-            skyMid = Color(0xFF73899D),
-            skyBottom = Color(0xFFB5C3CF),
-            glow = Color(0x44DDEAF8),
-            cloud = Color(0xFFE6EEF5),
-            fog = Color(0x55F2F8FF),
-            accent = Color(0xFFF8FBFF)
-        )
-        ParticleWeather.BLIZZARD -> WeatherPalette(
-            skyTop = Color(0xFF43576A),
-            skyMid = Color(0xFF607486),
-            skyBottom = Color(0xFF9FB0BC),
-            glow = Color(0x33D5E5F2),
-            cloud = Color(0xFFE1E9F0),
-            fog = Color(0x66F0F6FB),
-            accent = Color(0xFFF6FBFF)
-        )
-        ParticleWeather.HAIL -> WeatherPalette(
-            skyTop = Color(0xFF283445),
-            skyMid = Color(0xFF465668),
-            skyBottom = Color(0xFF768693),
-            glow = Color(0x334F637E),
-            cloud = Color(0xFFD4DFEA),
-            fog = Color(0x445E7186),
-            accent = Color(0xFFE9F6FF)
-        )
-        ParticleWeather.WIND -> WeatherPalette(
-            skyTop = Color(0xFF5A738A),
-            skyMid = Color(0xFF7E96A8),
-            skyBottom = Color(0xFFC6D0D8),
-            glow = Color(0x33F3E8D9),
-            cloud = Color(0xFFE4E9ED),
-            fog = Color(0x44EDF0F3),
-            accent = Color(0xFFF7F7F2)
-        )
-    }
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawWeatherBackdrop(
-    weather: ParticleWeather,
-    seconds: Float
-) {
-    val palette = weather.palette
-    drawRect(
-        brush = Brush.verticalGradient(
-            colors = listOf(palette.skyTop, palette.skyMid, palette.skyBottom)
-        ),
-        size = size
-    )
-
-    val glowCenter = when (weather) {
-        ParticleWeather.SUNNY -> Offset(size.width * 0.84f, size.height * 0.18f)
-        ParticleWeather.CLOUDY -> Offset(size.width * 0.74f, size.height * 0.22f)
-        ParticleWeather.FOG -> Offset(size.width * 0.50f, size.height * 0.30f)
-        ParticleWeather.SNOW, ParticleWeather.BLIZZARD -> Offset(size.width * 0.58f, size.height * 0.22f)
-        else -> Offset(size.width * 0.68f, size.height * 0.18f)
-    }
-    val glowRadius = size.minDimension * when (weather) {
-        ParticleWeather.SUNNY -> 0.42f
-        ParticleWeather.CLOUDY -> 0.32f
-        ParticleWeather.FOG -> 0.28f
-        else -> 0.24f
-    }
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(palette.glow.copy(alpha = 0.95f), Color.Transparent),
-            center = glowCenter,
-            radius = glowRadius
-        ),
-        radius = glowRadius,
-        center = glowCenter
-    )
-
-    val horizonAlpha = when (weather) {
-        ParticleWeather.SUNNY -> 0.15f
-        ParticleWeather.CLOUDY -> 0.09f
-        ParticleWeather.FOG -> 0.25f
-        ParticleWeather.SNOW, ParticleWeather.BLIZZARD -> 0.20f
-        else -> 0.12f
-    } + sin(seconds * 0.08f).coerceIn(-1f, 1f) * 0.015f
-
-    drawRect(
-        brush = Brush.verticalGradient(
-            colors = listOf(Color.Transparent, palette.fog.copy(alpha = horizonAlpha))
-        ),
-        topLeft = Offset(0f, size.height * 0.46f),
-        size = Size(size.width, size.height * 0.54f)
-    )
-
-    if (weather != ParticleWeather.SUNNY) {
-        drawNightStars(weather = weather, seconds = seconds)
-    }
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawNightStars(
-    weather: ParticleWeather,
-    seconds: Float
-) {
-    val count = when (weather) {
-        ParticleWeather.SNOW -> 70
-        ParticleWeather.BLIZZARD -> 82
-        ParticleWeather.CLOUDY -> 52
-        ParticleWeather.RAIN, ParticleWeather.DRIZZLE -> 42
-        else -> 46
-    }
-    repeat(count) { index ->
-        val seed = index * 0.173f
-        val x = ((seed * 37.2f) % 1f) * size.width
-        val y = (((seed * 91.7f) % 1f) * 0.62f + 0.02f) * size.height
-        val twinkle = 0.32f + 0.28f * (0.5f + 0.5f * sin(seconds * 0.7f + index))
-        val radius = if (index % 9 == 0) 2.4f else 1.2f + (index % 3) * 0.5f
-        drawCircle(
-            color = Color.White.copy(alpha = twinkle * if (weather == ParticleWeather.BLIZZARD) 0.7f else 1f),
-            radius = radius,
-            center = Offset(x, y)
-        )
-    }
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawAtmosphereBlobs(
-    weather: ParticleWeather,
-    seconds: Float,
-    blobs: List<AtmosphereBlob>
-) {
-    val palette = weather.palette
-    blobs.forEach { blob ->
-        val x = (blob.startX + seconds * blob.speed).wrap(1f) * size.width
-        val y = blob.startY * size.height + sin(seconds * 0.1f + blob.phase) * size.height * 0.02f
-        val width = size.width * blob.widthFactor
-        val height = size.height * blob.heightFactor
-        val cloudAlpha = blob.alpha * when (weather) {
-            ParticleWeather.SUNNY -> 0.9f
-            ParticleWeather.CLOUDY, ParticleWeather.FOG -> 1.05f
-            else -> 1.0f
-        }
-        // Draw wrapped copies on both sides to avoid visible popping when x wraps from right edge back to left.
-        listOf(-size.width, 0f, size.width).forEach { shift ->
-            drawCloudCluster(
-                center = Offset(x + shift, y),
-                size = Size(width, height),
-                color = palette.cloud.copy(alpha = cloudAlpha)
-            )
-        }
-    }
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCloudCluster(
-    center: Offset,
-    size: Size,
-    color: Color
-) {
-    val left = Offset(center.x - size.width * 0.24f, center.y + size.height * 0.08f)
-    val right = Offset(center.x + size.width * 0.24f, center.y + size.height * 0.04f)
-    val top = Offset(center.x, center.y - size.height * 0.10f)
-    drawOval(
-        color = color.copy(alpha = color.alpha * 0.72f),
-        topLeft = Offset(left.x - size.width * 0.30f, left.y - size.height * 0.26f),
-        size = Size(size.width * 0.60f, size.height * 0.52f)
-    )
-    drawOval(
-        color = color.copy(alpha = color.alpha),
-        topLeft = Offset(top.x - size.width * 0.34f, top.y - size.height * 0.32f),
-        size = Size(size.width * 0.68f, size.height * 0.64f)
-    )
-    drawOval(
-        color = color.copy(alpha = color.alpha * 0.80f),
-        topLeft = Offset(right.x - size.width * 0.28f, right.y - size.height * 0.24f),
-        size = Size(size.width * 0.56f, size.height * 0.48f)
-    )
-    drawRoundRect(
-        color = color.copy(alpha = color.alpha * 0.76f),
-        topLeft = Offset(center.x - size.width * 0.42f, center.y - size.height * 0.02f),
-        size = Size(size.width * 0.84f, size.height * 0.34f),
-        cornerRadius = CornerRadius(size.height * 0.22f, size.height * 0.22f)
-    )
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawFogVeils(
-    weather: ParticleWeather,
-    seconds: Float
-) {
-    if (weather !in listOf(ParticleWeather.FOG, ParticleWeather.CLOUDY, ParticleWeather.DRIZZLE, ParticleWeather.SNOW, ParticleWeather.BLIZZARD)) {
-        return
-    }
-    val palette = weather.palette
-    val bandCount = when (weather) {
-        ParticleWeather.FOG -> 4
-        ParticleWeather.CLOUDY -> 2
-        else -> 3
-    }
-    repeat(bandCount) { index ->
-        val y = size.height * (0.50f + index * 0.10f)
-        val drift = ((seconds * (0.012f + index * 0.005f)) + index * 0.13f).wrap(1f) * size.width
-        val alpha = when (weather) {
-            ParticleWeather.FOG -> 0.12f
-            ParticleWeather.CLOUDY -> 0.045f
-            else -> 0.09f
-        } + sin(seconds * 0.18f + index).coerceIn(-1f, 1f) * 0.01f
-        listOf(-size.width, 0f, size.width).forEach { shift ->
-            drawRoundRect(
-                brush = Brush.horizontalGradient(
-                    colors = listOf(
-                        Color.Transparent,
-                        palette.fog.copy(alpha = alpha),
-                        palette.fog.copy(alpha = alpha * 0.7f),
-                        Color.Transparent
-                    )
-                ),
-                topLeft = Offset(drift + shift - size.width * 0.55f, y),
-                size = Size(size.width * 1.10f, size.height * 0.09f),
-                cornerRadius = CornerRadius(size.height * 0.05f, size.height * 0.05f)
-            )
-        }
-    }
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawWeatherParticles(
-    weather: ParticleWeather,
-    seconds: Float,
-    particles: List<WeatherParticle>
-) {
-    val color = weather.palette.accent
-    particles.forEach { p ->
-        when (weather) {
-            ParticleWeather.SUNNY -> {
-                val y = (p.startY + seconds * p.speed).wrap(1f) * size.height
-                val x = (p.startX * size.width + sin(seconds * p.swayFrequency + p.phase) * p.swayAmplitude * size.width).wrap(size.width)
-                drawCircle(
-                    color = color.copy(alpha = p.alpha),
-                    radius = p.size,
-                    center = Offset(x, y)
-                )
-            }
-
-            ParticleWeather.CLOUDY, ParticleWeather.FOG -> {
-                val xProgress = (p.startX + seconds * p.speed).wrap(1f)
-                val x = xProgress * size.width
-                val y = p.startY * size.height + sin(seconds * p.swayFrequency + p.phase) * p.swayAmplitude * size.height
-                drawLine(
-                    color = color.copy(alpha = p.alpha),
-                    start = Offset(x, y),
-                    end = Offset(x + p.length, y + p.length * 0.04f),
-                    strokeWidth = p.size,
-                    cap = StrokeCap.Round
-                )
-            }
-
-            ParticleWeather.WIND -> {
-                val xProgress = (p.startX + seconds * p.speed).wrap(1f)
-                val y = p.startY * size.height + sin(seconds * p.swayFrequency + p.phase) * p.swayAmplitude * size.height
-                val x = xProgress * size.width
-                val edgeAlpha = when {
-                    xProgress < 0.08f -> xProgress / 0.08f
-                    xProgress > 0.92f -> (1f - xProgress) / 0.08f
-                    else -> 1f
-                }
-                drawLine(
-                    color = color.copy(alpha = p.alpha * edgeAlpha),
-                    start = Offset(x, y),
-                    end = Offset(x + p.length * 1.8f, y + p.length * 0.1f),
-                    strokeWidth = p.size,
-                    cap = StrokeCap.Round
-                )
-            }
-
-            ParticleWeather.RAIN, ParticleWeather.DRIZZLE -> {
-                val yProgress = (p.startY + (seconds * p.speed)).wrap(1f)
-                val sway = sin(seconds * p.swayFrequency + p.phase) * p.swayAmplitude * size.width
-                val xBase = (p.startX * size.width + sway).wrap(size.width)
-                val y = yProgress * size.height
-                val edgeAlpha = when {
-                    yProgress < 0.08f -> yProgress / 0.08f
-                    yProgress > 0.92f -> (1f - yProgress) / 0.08f
-                    else -> 1f
-                }
-                drawLine(
-                    color = color.copy(alpha = p.alpha * edgeAlpha),
-                    start = Offset(xBase, y),
-                    end = Offset(xBase - p.length * 0.35f, y + p.length),
-                    strokeWidth = p.size,
-                    cap = StrokeCap.Round
-                )
-            }
-
-            ParticleWeather.SNOW, ParticleWeather.BLIZZARD -> {
-                val yProgress = (p.startY + (seconds * p.speed)).wrap(1f)
-                val sway = sin(seconds * p.swayFrequency + p.phase) * p.swayAmplitude * size.width
-                val x = (p.startX * size.width + sway).wrap(size.width)
-                val y = yProgress * size.height
-                val edgeAlpha = when {
-                    yProgress < 0.1f -> yProgress / 0.1f
-                    yProgress > 0.9f -> (1f - yProgress) / 0.1f
-                    else -> 1f
-                }
-                drawSnowflake(
-                    center = Offset(x, y),
-                    radius = p.size,
-                    color = color.copy(alpha = p.alpha * edgeAlpha),
-                    stroke = (p.size * 0.28f).coerceAtLeast(0.8f)
-                )
-            }
-
-            ParticleWeather.HAIL -> {
-                val yProgress = (p.startY + (seconds * p.speed)).wrap(1f)
-                val x = p.startX * size.width
-                val y = yProgress * size.height
-                val edgeAlpha = when {
-                    yProgress < 0.08f -> yProgress / 0.08f
-                    yProgress > 0.92f -> (1f - yProgress) / 0.08f
-                    else -> 1f
-                }
-                drawCircle(
-                    color = color.copy(alpha = p.alpha * edgeAlpha),
-                    radius = p.size,
-                    center = Offset(x, y)
-                )
-                drawCircle(
-                    color = Color.White.copy(alpha = p.alpha * 0.2f * edgeAlpha),
-                    radius = p.size * 0.5f,
-                    center = Offset(x, y)
-                )
-            }
-        }
-    }
-}
-
-private fun Float.wrap(max: Float): Float {
-    if (max <= 0f) return this
-    var v = this % max
-    if (v < 0f) v += max
-    return v
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSnowflake(
-    center: Offset,
-    radius: Float,
-    color: Color,
-    stroke: Float
-) {
-    val r = radius.coerceAtLeast(1.2f)
-    val arm = r * 1.25f
-    val branch = arm * 0.32f
-
-    // 3 axes = 6-point snowflake
-    repeat(3) { i ->
-        val angle = i * (Math.PI / 3.0)
-        val dx = cos(angle).toFloat()
-        val dy = sin(angle).toFloat()
-        val start = Offset(center.x - dx * arm, center.y - dy * arm)
-        val end = Offset(center.x + dx * arm, center.y + dy * arm)
-        drawLine(color = color, start = start, end = end, strokeWidth = stroke, cap = StrokeCap.Round)
-
-        val px = center.x + dx * arm * 0.58f
-        val py = center.y + dy * arm * 0.58f
-        val nx = -dy
-        val ny = dx
-        drawLine(
-            color = color,
-            start = Offset(px, py),
-            end = Offset(px + nx * branch, py + ny * branch),
-            strokeWidth = stroke * 0.85f,
-            cap = StrokeCap.Round
-        )
-        drawLine(
-            color = color,
-            start = Offset(px, py),
-            end = Offset(px - nx * branch, py - ny * branch),
-            strokeWidth = stroke * 0.85f,
-            cap = StrokeCap.Round
-        )
-    }
-}
 
 @Composable
 private fun LiquidGlassSurface(
@@ -1358,66 +375,6 @@ private fun LiquidGlassSurface(
             .padding(padding),
         content = content
     )
-}
-
-@Composable
-private fun LiquidGlassChip(
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    content: @Composable BoxScope.() -> Unit
-) {
-    val shape = RoundedCornerShape(16.dp)
-    Box(
-        modifier = modifier
-            .clip(shape)
-            .clickable(onClick = onClick)
-            .background(
-                brush = if (selected) {
-                    Brush.linearGradient(
-                        listOf(
-                            Color(0xFF24364A).copy(alpha = 0.88f),
-                            Color(0xFF182636).copy(alpha = 0.92f)
-                        )
-                    )
-                } else {
-                    Brush.linearGradient(
-                        listOf(
-                            Color(0xFF162231).copy(alpha = 0.78f),
-                            Color(0xFF101B28).copy(alpha = 0.84f)
-                        )
-                    )
-                },
-                shape = shape
-            )
-            .border(
-                width = 0.5.dp,
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = if (selected) 0.28f else 0.15f),
-                        Color.White.copy(alpha = 0.05f)
-                    )
-                ),
-                shape = shape
-            )
-            .drawWithContent {
-                drawContent()
-                drawRoundRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = if (selected) 0.13f else 0.07f),
-                            Color.Transparent,
-                            LiquidGlassShadow.copy(alpha = 0.08f)
-                        )
-                    ),
-                    cornerRadius = CornerRadius(16.dp.toPx(), 16.dp.toPx())
-                )
-            }
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        content()
-    }
 }
 
 @Composable
@@ -1796,14 +753,7 @@ private fun SleepSoundSelector(
                 Switch(
                     checked = enabled,
                     onCheckedChange = onEnabledChange,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = Color(0xFFB7E2FF),
-                        uncheckedThumbColor = Color.White.copy(alpha = 0.92f),
-                        uncheckedTrackColor = Color.White.copy(alpha = 0.22f),
-                        uncheckedBorderColor = Color.Transparent,
-                        checkedBorderColor = Color.Transparent
-                    )
+                    colors = liquidSwitchColors()
                 )
             }
             Text(
@@ -1915,14 +865,7 @@ private fun DailyAlarmCard(
                 Switch(
                     checked = enabled,
                     onCheckedChange = onEnabledChange,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = Color(0xFFB7E2FF),
-                        uncheckedThumbColor = Color.White.copy(alpha = 0.92f),
-                        uncheckedTrackColor = Color.White.copy(alpha = 0.22f),
-                        uncheckedBorderColor = Color.Transparent,
-                        checkedBorderColor = Color.Transparent
-                    )
+                    colors = liquidSwitchColors()
                 )
             }
             AnimatedVisibility(visible = enabled) {
@@ -2105,23 +1048,25 @@ private fun SettingToggle(title: String, checked: Boolean, onCheckedChange: (Boo
             Switch(
                 checked = checked,
                 onCheckedChange = onCheckedChange,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = Color(0xFFB7E2FF),
-                    uncheckedThumbColor = Color.White.copy(alpha = 0.92f),
-                    uncheckedTrackColor = Color.White.copy(alpha = 0.22f),
-                    uncheckedBorderColor = Color.Transparent,
-                    checkedBorderColor = Color.Transparent
-                )
+                colors = liquidSwitchColors()
             )
         }
     }
 }
 
 @Composable
+private fun liquidSwitchColors() = SwitchDefaults.colors(
+    checkedThumbColor = Color.White,
+    checkedTrackColor = Color(0xFFB7E2FF),
+    uncheckedThumbColor = Color.White.copy(alpha = 0.92f),
+    uncheckedTrackColor = Color.White.copy(alpha = 0.22f),
+    uncheckedBorderColor = Color.Transparent,
+    checkedBorderColor = Color.Transparent
+)
+
+@Composable
 private fun ClockContent(
     state: ClockState,
-    fontFamily: FontFamily,
     onPlayAudio: () -> Unit,
     onToggleSettings: () -> Unit,
     onSetClockMode: (ClockMode) -> Unit,
@@ -2159,14 +1104,10 @@ private fun ClockContent(
         if (isLandscape) {
             val displayModifier = Modifier
                 .then(mainDisplayModifier)
-                .onGloballyPositioned { coordinates ->
-                    val rect = coordinates.boundsInRoot()
-                    onTimeBoundsChanged(RectF(rect.left, rect.top, rect.right, rect.bottom))
-                }
+                .reportBounds(onTimeBoundsChanged)
 
             LandscapeClockContent(
                 state = state,
-                fontFamily = fontFamily,
                 baseFontSize = baseFontSize,
                 displayModifier = displayModifier,
                 onToggleSettings = onToggleSettings,
@@ -2183,16 +1124,10 @@ private fun ClockContent(
 
         val displayModifier = Modifier
             .then(mainDisplayModifier)
-            .onGloballyPositioned { coordinates ->
-                val rect = coordinates.boundsInRoot()
-                onTimeBoundsChanged(
-                    RectF(rect.left, rect.top, rect.right, rect.bottom)
-                )
-            }
+            .reportBounds(onTimeBoundsChanged)
 
         PortraitClockContent(
             state = state,
-            fontFamily = fontFamily,
             baseFontSize = baseFontSize,
             footerFontSize = footerFontSize,
             quietLayout = quietLayout,
@@ -2240,7 +1175,6 @@ private fun ModeSwitcherRow(
 @Composable
 private fun PortraitClockContent(
     state: ClockState,
-    fontFamily: FontFamily,
     baseFontSize: Float,
     footerFontSize: TextUnit,
     quietLayout: Boolean,
@@ -2308,7 +1242,6 @@ private fun PortraitClockContent(
 
         MainTimeDisplay(
             state = state,
-            fontFamily = fontFamily,
             baseSize = portraitMainSize,
             modifier = displayModifier,
             showSeconds = false
@@ -2548,7 +1481,6 @@ private fun PortraitSecondsCard(
 @Composable
 private fun LandscapeClockContent(
     state: ClockState,
-    fontFamily: FontFamily,
     baseFontSize: Float,
     displayModifier: Modifier,
     onToggleSettings: () -> Unit,
@@ -2628,7 +1560,6 @@ private fun LandscapeClockContent(
 
         MainTimeDisplay(
             state = state,
-            fontFamily = fontFamily,
             baseSize = baseFontSize * 1.30f,
             modifier = displayModifier
                 .align(Alignment.Center)
@@ -2716,39 +1647,6 @@ private fun LandscapeModeFooter(
                             )
                     )
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ModeSidebarRail(
-    state: ClockState,
-    onSetClockMode: (ClockMode) -> Unit,
-    onToggleModeRunning: () -> Unit,
-    onResetMode: () -> Unit,
-    onSetPomodoroFocus: (Int) -> Unit,
-    onSetPomodoroBreak: (Int) -> Unit,
-    onSetCountdown: (Int) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier.width(124.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        horizontalAlignment = Alignment.Start
-    ) {
-        ClockMode.entries.forEach { mode ->
-            SettingsChip(
-                selected = state.clockMode == mode,
-                onClick = { onSetClockMode(mode) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = mode.label(),
-                    color = LiquidGlassText.copy(alpha = 0.92f),
-                    fontSize = 12.sp,
-                    fontFamily = UiFontFamily
-                )
             }
         }
     }
@@ -3390,7 +2288,6 @@ private fun CompanionStatusCard(
 @Composable
 private fun MainTimeDisplay(
     state: ClockState,
-    fontFamily: FontFamily,
     baseSize: Float,
     modifier: Modifier,
     showSeconds: Boolean = true
@@ -3736,29 +2633,6 @@ private fun HingeOverlay(
     }
 }
 
-@Composable
-private fun BatteryStatus(levelStr: String) {
-    val level = levelStr.trimEnd('%').toIntOrNull() ?: 0
-    val batteryColor = when {
-        level <= 20 -> Color(0xFFFF4D4D)
-        level <= 50 -> Color(0xFFFFD666)
-        else -> LiquidGlassText.copy(alpha = 0.95f)
-    }
-
-    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(end = 4.dp)) {
-        Canvas(modifier = Modifier.size(width = 38.dp, height = 18.dp)) {
-            val width = size.width; val height = size.height
-            val strokeWidth = 1.5.dp.toPx(); val cornerRadius = 3.dp.toPx()
-            drawRoundRect(color = Color.White.copy(alpha = 0.3f), size = Size(width * 0.9f, height), cornerRadius = CornerRadius(cornerRadius), style = Stroke(width = strokeWidth))
-            drawRoundRect(color = Color.White.copy(alpha = 0.3f), topLeft = Offset(width * 0.9f + 1.dp.toPx(), height * 0.3f), size = Size(width * 0.08f, height * 0.4f), cornerRadius = CornerRadius(1.dp.toPx()), style = Fill)
-            val padding = 2.5.dp.toPx()
-            val fillWidth = (width * 0.9f - padding * 2) * (level / 100f)
-            if (fillWidth > 0) drawRoundRect(color = batteryColor, topLeft = Offset(padding, padding), size = Size(fillWidth, height - padding * 2), cornerRadius = CornerRadius(1.5.dp.toPx()), style = Fill)
-        }
-        Text(text = "$level", color = if (level > 50) Color.Black.copy(alpha = 0.68f) else LiquidGlassText, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 3.dp))
-    }
-}
-
 private data class TimerDisplay(val hour: String, val minute: String, val second: String, val amPm: String = "")
 
 @Composable
@@ -4000,5 +2874,12 @@ private fun Offset.sanitize(): Offset = Offset(
     x = x.takeIf { it.isFinite() } ?: 0f,
     y = y.takeIf { it.isFinite() } ?: 0f
 )
+
+private fun Modifier.reportBounds(onBoundsChanged: (RectF) -> Unit): Modifier {
+    return onGloballyPositioned { coordinates ->
+        val rect = coordinates.boundsInRoot()
+        onBoundsChanged(RectF(rect.left, rect.top, rect.right, rect.bottom))
+    }
+}
 
 private fun Int.floorMod(mod: Int): Int = ((this % mod) + mod) % mod
