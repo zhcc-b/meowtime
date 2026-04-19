@@ -201,162 +201,271 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         if (tickerJob?.isActive == true) return
         tickerJob = viewModelScope.launch(Dispatchers.Default) {
             var lastMinute = -1
-            var nextWeatherChangeEpochSec = 0L
-            var activeWeather = _uiState.value.particleWeather
-            val recentAutoWeathers = ArrayDeque<ParticleWeather>()
-
-            fun rememberAutoWeather(weather: ParticleWeather) {
-                recentAutoWeathers.addLast(weather)
-                while (recentAutoWeathers.size > 3) {
-                    recentAutoWeathers.removeFirst()
-                }
+            val weatherTicker = AutoWeatherTickerState(_uiState.value.particleWeather).apply {
+                rememberAutoWeather(activeWeather)
             }
 
-            rememberAutoWeather(activeWeather)
             while (isActive) {
                 val now = ZonedDateTime.now()
-                val currentMinute = now.minute
-                val hour24 = now.hour
-                val second = now.second
-                val nowEpochSec = now.toEpochSecond()
-                val weatherAuto = _uiState.value.isParticleWeatherAuto
-                val isNightQuietHours = hour24 >= 23 || hour24 < 7
-                val resolvedPreset = _uiState.value.selectedThemePreset.resolveActive(hour24)
-                if (weatherAuto) {
-                    if (activeWeather != _uiState.value.particleWeather) {
-                        activeWeather = _uiState.value.particleWeather
-                    }
-                    val weatherCandidates = weatherCandidatesForPreset(
-                        preset = resolvedPreset,
-                        hour24 = hour24,
-                        allowBrightWeather = !isNightQuietHours
-                    )
-                    if (isNightQuietHours && activeWeather.isBrightWeather()) {
-                        activeWeather = pickRandomWeather(
-                            excluding = activeWeather,
-                            candidates = weatherCandidates,
-                            preferCalm = true,
-                            recent = recentAutoWeathers
-                        )
-                        rememberAutoWeather(activeWeather)
-                        nextWeatherChangeEpochSec = nowEpochSec + WEATHER_ROTATION_INTERVAL_SEC
-                    }
-                    if (nextWeatherChangeEpochSec == 0L || nowEpochSec >= nextWeatherChangeEpochSec) {
-                        activeWeather = pickRandomWeather(
-                            excluding = activeWeather,
-                            candidates = weatherCandidates,
-                            preferCalm = isNightQuietHours,
-                            recent = recentAutoWeathers
-                        )
-                        rememberAutoWeather(activeWeather)
-                        nextWeatherChangeEpochSec = nowEpochSec + WEATHER_ROTATION_INTERVAL_SEC
-                    }
-                } else {
-                    activeWeather = _uiState.value.particleWeather
-                    nextWeatherChangeEpochSec = nowEpochSec + WEATHER_ROTATION_INTERVAL_SEC
-                }
+                val currentState = _uiState.value
+                val timeTick = buildTimeTick(now, currentState)
+                val resolvedPreset = currentState.selectedThemePreset.resolveActive(timeTick.hour24)
+                val activeWeather = weatherTicker.advanceWeatherTick(
+                    requestedWeather = currentState.particleWeather,
+                    isAuto = currentState.isParticleWeatherAuto,
+                    resolvedPreset = resolvedPreset,
+                    timeTick = timeTick
+                )
 
-                var shouldPlayReminder = false
-                var shouldStartDailyAlarm = false
-                var reminderCue = ReminderCue.DEFAULT
-                var edgeLightMode: EdgeLightMode? = null
-                var edgeLightDurationMs: Long? = null
+                var sideEffects = ClockTickerSideEffects()
                 _uiState.update { state ->
-                    var workingState = state
-                    if (workingState.activeThemePreset != resolvedPreset) {
-                        // In AUTO mode the preset switches automatically on a schedule;
-                        // take the opportunity to also randomly pick a fresh font.
-                        val isAutoMode = workingState.selectedThemePreset == ThemePreset.AUTO
-                        workingState = applyThemePresetProfile(
-                            state = workingState.copy(activeThemePreset = resolvedPreset),
-                            preset = resolvedPreset,
-                            randomizeFont = isAutoMode
-                        )
-                    }
+                    var workingState = advanceThemeTick(state, resolvedPreset)
 
-                    val modeTick = advanceModeState(workingState)
+                    val modeTick = advanceModeTick(workingState)
                     workingState = modeTick.state
-                    if (modeTick.triggerSound) {
-                        shouldPlayReminder = true
-                    }
-                    edgeLightMode = modeTick.edgeLightMode
-                    edgeLightDurationMs = modeTick.edgeLightDurationMs
+                    sideEffects = sideEffects.withModeTick(modeTick)
 
-                    val burnInOffset = if (currentMinute != lastMinute) {
-                        Offset(
-                            x = random.nextFloat() * 20f - 10f,
-                            y = random.nextFloat() * 20f - 10f
-                        )
-                    } else {
-                        workingState.burnInOffset
-                    }
-                    val displayHour = if (workingState.is24HourFormat) {
-                        hour24.toString().padStart(2, '0')
-                    } else {
-                        val h12 = if (hour24 % 12 == 0) 12 else hour24 % 12
-                        h12.toString().padStart(2, '0')
-                    }
-                    val amPm = if (workingState.is24HourFormat) "" else now.format(amPmFormatter)
-                    val hourlyMarker = "${now.toLocalDate()}-$hour24"
-                    val dailyMarker = "${now.toLocalDate()}-${workingState.dailyAlarmHour}-${workingState.dailyAlarmMinute}"
-                    var companionMessage = modeTick.message ?: workingState.companionMessage
-                    val snoozeRemainingSeconds = dailyAlarmSnoozeDeadlineElapsedMs
-                        ?.let { deadline ->
-                            (((deadline - SystemClock.elapsedRealtime()) + 999L) / 1000L)
-                                .coerceAtLeast(0L)
-                                .toInt()
-                        }
-                        ?: 0
-
-                    if (workingState.hourlyChimeEnabled && currentMinute == 0 && second == 0 && hourlyMarker != lastHourlyChimeMarker) {
-                        lastHourlyChimeMarker = hourlyMarker
-                        shouldPlayReminder = true
-                        reminderCue = ReminderCue.HOURLY_CHIME
-                        companionMessage = appContext.getString(R.string.reminder_hourly_chime, displayHour)
-                    }
-                    if (
-                        workingState.dailyAlarmEnabled &&
-                        !workingState.isDailyAlarmRinging &&
-                        hour24 == workingState.dailyAlarmHour &&
-                        currentMinute == workingState.dailyAlarmMinute &&
-                        second == 0 &&
-                        dailyMarker != lastDailyAlarmMarker
-                    ) {
-                        lastDailyAlarmMarker = dailyMarker
-                        shouldStartDailyAlarm = true
-                        companionMessage = appContext.getString(R.string.reminder_alarm_now)
-                    }
+                    val burnInOffset = advanceBurnInOffset(workingState, timeTick.minute, lastMinute)
+                    val alarmTick = advanceAlarmTick(
+                        state = workingState,
+                        timeTick = timeTick,
+                        companionMessage = modeTick.message ?: workingState.companionMessage
+                    )
+                    workingState = alarmTick.state
+                    sideEffects = sideEffects.withAlarmTick(alarmTick)
 
                     workingState.copy(
-                        hour = displayHour,
-                        minute = currentMinute.toString().padStart(2, '0'),
-                        second = second.toString().padStart(2, '0'),
-                        currentHour24 = hour24,
-                        amPm = amPm,
-                        date = now.format(dateFormatter),
-                        dayOfWeek = now.dayOfWeek.getDisplayName(TextStyle.FULL, locale),
+                        hour = timeTick.displayHour,
+                        minute = timeTick.minute.toString().padStart(2, '0'),
+                        second = timeTick.second.toString().padStart(2, '0'),
+                        currentHour24 = timeTick.hour24,
+                        amPm = timeTick.amPm,
+                        date = timeTick.date,
+                        dayOfWeek = timeTick.dayOfWeek,
                         // Avoid bright/sunny background imagery during quiet night hours.
-                        backgroundRes = if (isNightQuietHours) null else R.drawable.jiguang,
+                        backgroundRes = if (timeTick.isNightQuietHours) null else R.drawable.jiguang,
                         particleWeather = if (workingState.isParticleWeatherAuto) activeWeather else workingState.particleWeather,
                         burnInOffset = burnInOffset,
-                        dailyAlarmSnoozeRemainingSeconds = snoozeRemainingSeconds,
-                        companionMessage = companionMessage
+                        dailyAlarmSnoozeRemainingSeconds = alarmTick.snoozeRemainingSeconds,
+                        companionMessage = alarmTick.companionMessage
                     )
                 }
-                if (shouldPlayReminder) {
-                    playReminderCue(reminderCue)
-                }
-                if (shouldStartDailyAlarm) {
-                    startDailyAlarm()
-                }
-                if (edgeLightMode != null) {
-                    showEdgeLight(edgeLightMode!!, edgeLightDurationMs)
-                }
-                if (currentMinute != lastMinute) {
-                    lastMinute = currentMinute
+
+                runTickerSideEffects(sideEffects)
+                if (timeTick.minute != lastMinute) {
+                    lastMinute = timeTick.minute
                 }
                 delay(1000)
             }
+        }
+    }
+
+    private data class TimeTick(
+        val displayHour: String,
+        val minute: Int,
+        val second: Int,
+        val hour24: Int,
+        val amPm: String,
+        val date: String,
+        val dayOfWeek: String,
+        val epochSecond: Long,
+        val isNightQuietHours: Boolean
+    )
+
+    private data class AutoWeatherTickerState(
+        var activeWeather: ParticleWeather,
+        var nextChangeEpochSec: Long = 0L,
+        val recentAutoWeathers: ArrayDeque<ParticleWeather> = ArrayDeque()
+    )
+
+    private data class AlarmTickResult(
+        val state: ClockState,
+        val snoozeRemainingSeconds: Int,
+        val companionMessage: String,
+        val shouldPlayReminder: Boolean = false,
+        val shouldStartDailyAlarm: Boolean = false,
+        val reminderCue: ReminderCue = ReminderCue.DEFAULT
+    )
+
+    private data class ClockTickerSideEffects(
+        val shouldPlayReminder: Boolean = false,
+        val shouldStartDailyAlarm: Boolean = false,
+        val reminderCue: ReminderCue = ReminderCue.DEFAULT,
+        val edgeLightMode: EdgeLightMode? = null,
+        val edgeLightDurationMs: Long? = null
+    ) {
+        fun withModeTick(modeTick: ModeTickResult): ClockTickerSideEffects {
+            return copy(
+                shouldPlayReminder = shouldPlayReminder || modeTick.triggerSound,
+                edgeLightMode = modeTick.edgeLightMode ?: edgeLightMode,
+                edgeLightDurationMs = modeTick.edgeLightDurationMs ?: edgeLightDurationMs
+            )
+        }
+
+        fun withAlarmTick(alarmTick: AlarmTickResult): ClockTickerSideEffects {
+            return copy(
+                shouldPlayReminder = shouldPlayReminder || alarmTick.shouldPlayReminder,
+                shouldStartDailyAlarm = shouldStartDailyAlarm || alarmTick.shouldStartDailyAlarm,
+                reminderCue = if (alarmTick.shouldPlayReminder) alarmTick.reminderCue else reminderCue
+            )
+        }
+    }
+
+    private fun buildTimeTick(now: ZonedDateTime, state: ClockState): TimeTick {
+        val hour24 = now.hour
+        val displayHour = if (state.is24HourFormat) {
+            hour24.toString().padStart(2, '0')
+        } else {
+            val h12 = if (hour24 % 12 == 0) 12 else hour24 % 12
+            h12.toString().padStart(2, '0')
+        }
+        return TimeTick(
+            displayHour = displayHour,
+            minute = now.minute,
+            second = now.second,
+            hour24 = hour24,
+            amPm = if (state.is24HourFormat) "" else now.format(amPmFormatter),
+            date = now.format(dateFormatter),
+            dayOfWeek = now.dayOfWeek.getDisplayName(TextStyle.FULL, locale),
+            epochSecond = now.toEpochSecond(),
+            isNightQuietHours = hour24 >= 23 || hour24 < 7
+        )
+    }
+
+    private fun AutoWeatherTickerState.rememberAutoWeather(weather: ParticleWeather) {
+        recentAutoWeathers.addLast(weather)
+        while (recentAutoWeathers.size > 3) {
+            recentAutoWeathers.removeFirst()
+        }
+    }
+
+    private fun AutoWeatherTickerState.advanceWeatherTick(
+        requestedWeather: ParticleWeather,
+        isAuto: Boolean,
+        resolvedPreset: ThemePreset,
+        timeTick: TimeTick
+    ): ParticleWeather {
+        if (!isAuto) {
+            activeWeather = requestedWeather
+            nextChangeEpochSec = timeTick.epochSecond + WEATHER_ROTATION_INTERVAL_SEC
+            return activeWeather
+        }
+
+        if (activeWeather != requestedWeather) {
+            activeWeather = requestedWeather
+        }
+        val weatherCandidates = weatherCandidatesForPreset(
+            preset = resolvedPreset,
+            hour24 = timeTick.hour24,
+            allowBrightWeather = !timeTick.isNightQuietHours
+        )
+        if (timeTick.isNightQuietHours && activeWeather.isBrightWeather()) {
+            activeWeather = pickRandomWeather(
+                excluding = activeWeather,
+                candidates = weatherCandidates,
+                preferCalm = true,
+                recent = recentAutoWeathers
+            )
+            rememberAutoWeather(activeWeather)
+            nextChangeEpochSec = timeTick.epochSecond + WEATHER_ROTATION_INTERVAL_SEC
+        }
+        if (nextChangeEpochSec == 0L || timeTick.epochSecond >= nextChangeEpochSec) {
+            activeWeather = pickRandomWeather(
+                excluding = activeWeather,
+                candidates = weatherCandidates,
+                preferCalm = timeTick.isNightQuietHours,
+                recent = recentAutoWeathers
+            )
+            rememberAutoWeather(activeWeather)
+            nextChangeEpochSec = timeTick.epochSecond + WEATHER_ROTATION_INTERVAL_SEC
+        }
+        return activeWeather
+    }
+
+    private fun advanceThemeTick(state: ClockState, resolvedPreset: ThemePreset): ClockState {
+        if (state.activeThemePreset == resolvedPreset) return state
+        // In AUTO mode the preset switches automatically on a schedule;
+        // take the opportunity to also randomly pick a fresh font.
+        val isAutoMode = state.selectedThemePreset == ThemePreset.AUTO
+        return applyThemePresetProfile(
+            state = state.copy(activeThemePreset = resolvedPreset),
+            preset = resolvedPreset,
+            randomizeFont = isAutoMode
+        )
+    }
+
+    private fun advanceModeTick(state: ClockState): ModeTickResult {
+        return advanceModeState(state)
+    }
+
+    private fun advanceBurnInOffset(state: ClockState, currentMinute: Int, lastMinute: Int): Offset {
+        return if (currentMinute != lastMinute) {
+            Offset(
+                x = random.nextFloat() * 20f - 10f,
+                y = random.nextFloat() * 20f - 10f
+            )
+        } else {
+            state.burnInOffset
+        }
+    }
+
+    private fun advanceAlarmTick(
+        state: ClockState,
+        timeTick: TimeTick,
+        companionMessage: String
+    ): AlarmTickResult {
+        val hourlyMarker = "${timeTick.date}-${timeTick.hour24}"
+        val dailyMarker = "${timeTick.date}-${state.dailyAlarmHour}-${state.dailyAlarmMinute}"
+        var nextMessage = companionMessage
+        var shouldPlayReminder = false
+        var shouldStartDailyAlarm = false
+        var reminderCue = ReminderCue.DEFAULT
+        val snoozeRemainingSeconds = dailyAlarmSnoozeDeadlineElapsedMs
+            ?.let { deadline ->
+                (((deadline - SystemClock.elapsedRealtime()) + 999L) / 1000L)
+                    .coerceAtLeast(0L)
+                    .toInt()
+            }
+            ?: 0
+
+        if (state.hourlyChimeEnabled && timeTick.minute == 0 && timeTick.second == 0 && hourlyMarker != lastHourlyChimeMarker) {
+            lastHourlyChimeMarker = hourlyMarker
+            shouldPlayReminder = true
+            reminderCue = ReminderCue.HOURLY_CHIME
+            nextMessage = appContext.getString(R.string.reminder_hourly_chime, timeTick.displayHour)
+        }
+        if (
+            state.dailyAlarmEnabled &&
+            !state.isDailyAlarmRinging &&
+            timeTick.hour24 == state.dailyAlarmHour &&
+            timeTick.minute == state.dailyAlarmMinute &&
+            timeTick.second == 0 &&
+            dailyMarker != lastDailyAlarmMarker
+        ) {
+            lastDailyAlarmMarker = dailyMarker
+            shouldStartDailyAlarm = true
+            nextMessage = appContext.getString(R.string.reminder_alarm_now)
+        }
+
+        return AlarmTickResult(
+            state = state,
+            snoozeRemainingSeconds = snoozeRemainingSeconds,
+            companionMessage = nextMessage,
+            shouldPlayReminder = shouldPlayReminder,
+            shouldStartDailyAlarm = shouldStartDailyAlarm,
+            reminderCue = reminderCue
+        )
+    }
+
+    private fun runTickerSideEffects(sideEffects: ClockTickerSideEffects) {
+        if (sideEffects.shouldPlayReminder) {
+            playReminderCue(sideEffects.reminderCue)
+        }
+        if (sideEffects.shouldStartDailyAlarm) {
+            startDailyAlarm()
+        }
+        if (sideEffects.edgeLightMode != null) {
+            showEdgeLight(sideEffects.edgeLightMode, sideEffects.edgeLightDurationMs)
         }
     }
 
