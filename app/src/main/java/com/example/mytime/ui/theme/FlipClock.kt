@@ -533,6 +533,120 @@ internal fun SettingsChip(
 }
 
 @Composable
+private fun SettingsGearButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier.size(44.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Default.Settings,
+            contentDescription = stringResource(id = R.string.cd_settings),
+            modifier = Modifier.size(22.dp),
+            tint = LiquidGlassText.copy(alpha = 0.76f)
+        )
+    }
+}
+
+@Composable
+private fun StatusControlCard(
+    batteryLevel: String,
+    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false
+) {
+    LiquidGlassSurface(
+        shape = RoundedCornerShape(30.dp),
+        padding = PaddingValues(
+            start = if (compact) 10.dp else 12.dp,
+            top = if (compact) 5.dp else 6.dp,
+            end = 4.dp,
+            bottom = if (compact) 5.dp else 6.dp
+        ),
+        modifier = modifier
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BatteryIndicator(
+                batteryLevel = batteryLevel,
+                compact = compact
+            )
+            SettingsGearButton(onClick = onOpenSettings)
+        }
+    }
+}
+
+@Composable
+private fun BatteryIndicator(
+    batteryLevel: String,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false
+) {
+    val percent = remember(batteryLevel) {
+        batteryLevel.filter { it.isDigit() }.toIntOrNull()
+    } ?: return
+    val isLow = percent < 30
+    val accent = if (isLow) Color(0xFFFFC28C) else LiquidGlassText
+    val shape = RoundedCornerShape(18.dp)
+
+    Row(
+        modifier = modifier
+            .border(
+                width = 0.5.dp,
+                color = accent.copy(alpha = if (isLow) 0.42f else 0.14f),
+                shape = shape
+            )
+            .padding(
+                horizontal = if (compact) 9.dp else 11.dp,
+                vertical = if (compact) 5.dp else 6.dp
+            ),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "$percent%",
+            color = accent.copy(alpha = if (isLow) 0.94f else 0.72f),
+            fontSize = if (compact) 10.sp else 11.sp,
+            fontFamily = UiFontFamily,
+            fontWeight = if (isLow) FontWeight.SemiBold else FontWeight.Medium
+        )
+        Canvas(
+            modifier = Modifier
+                .width(if (compact) 15.dp else 17.dp)
+                .height(if (compact) 8.dp else 9.dp)
+        ) {
+            val stroke = 1.1.dp.toPx()
+            val capWidth = 1.8.dp.toPx()
+            val bodyWidth = size.width - capWidth - stroke
+            val fillWidth = (bodyWidth - stroke * 3f) * (percent / 100f).coerceIn(0f, 1f)
+            drawRoundRect(
+                color = accent.copy(alpha = if (isLow) 0.68f else 0.40f),
+                topLeft = Offset(stroke / 2f, stroke / 2f),
+                size = Size(bodyWidth, size.height - stroke),
+                cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx()),
+                style = Stroke(width = stroke)
+            )
+            drawRoundRect(
+                color = accent.copy(alpha = if (isLow) 0.86f else 0.52f),
+                topLeft = Offset(stroke * 1.5f, stroke * 1.5f),
+                size = Size(fillWidth.coerceAtLeast(0f), size.height - stroke * 3f),
+                cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
+            )
+            drawRoundRect(
+                color = accent.copy(alpha = if (isLow) 0.68f else 0.36f),
+                topLeft = Offset(bodyWidth + stroke, size.height * 0.30f),
+                size = Size(capWidth, size.height * 0.40f),
+                cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
+            )
+        }
+    }
+}
+
+@Composable
 private fun ClockContent(
     state: ClockState,
     onPlayAudio: () -> Unit,
@@ -680,22 +794,11 @@ private fun PortraitClockContent(
                 footerFontSize = footerFontSize,
                 modifier = Modifier.weight(1f)
             )
-            LiquidGlassSurface(
-                shape = RoundedCornerShape(28.dp),
-                padding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-            ) {
-                IconButton(
-                    onClick = onToggleSettings,
-                    modifier = Modifier.size(44.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = stringResource(id = R.string.cd_settings),
-                        modifier = Modifier.size(22.dp),
-                        tint = LiquidGlassText.copy(alpha = 0.76f)
-                    )
-                }
-            }
+            StatusControlCard(
+                batteryLevel = state.batteryLevel,
+                onOpenSettings = onToggleSettings,
+                compact = true
+            )
         }
 
         ModeSwitcherRow(
@@ -999,25 +1102,13 @@ private fun LandscapeClockContent(
                 )
             }
     ) {
-        LiquidGlassSurface(
-            shape = RoundedCornerShape(28.dp),
-            padding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+        StatusControlCard(
+            batteryLevel = state.batteryLevel,
+            onOpenSettings = onToggleSettings,
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(top = 2.dp, end = 2.dp)
-        ) {
-            IconButton(
-                onClick = onToggleSettings,
-                modifier = Modifier.size(44.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = stringResource(id = R.string.cd_settings),
-                    modifier = Modifier.size(22.dp),
-                    tint = LiquidGlassText.copy(alpha = 0.76f)
-                )
-            }
-        }
+        )
 
         LandscapeDateLocationBlock(
             state = state,
