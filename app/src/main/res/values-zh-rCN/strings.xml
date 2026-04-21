@@ -76,6 +76,14 @@
     <string name="alarm_dismiss">关闭闹钟</string>
     <string name="alarm_snoozed_message">已设置 10 分钟后再次提醒。</string>
     <string name="alarm_dismissed_message">闹钟已关闭。</string>
+    <string name="timer_alert_now">倒计时结束。</string>
+    <string name="timer_dialog_title">倒计时</string>
+    <string name="timer_dialog_body">倒计时最多会响 9 分钟。</string>
+    <string name="timer_repeat_title">再来一次</string>
+    <string name="timer_repeat_subtitle">%1$d 分钟</string>
+    <string name="timer_stop">停止</string>
+    <string name="timer_repeat_message">已开始同样时长的倒计时。</string>
+    <string name="timer_stopped_message">倒计时提醒已停止。</string>
     <string name="weather_sunny">晴天</string>
     <string name="weather_cloudy">多云</string>
     <string name="weather_fog">雾天</string>

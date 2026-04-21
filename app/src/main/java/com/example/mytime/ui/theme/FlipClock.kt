@@ -98,6 +98,8 @@ fun FlipClockScreen(
     onSetDailyAlarmMinute: (Int) -> Unit,
     onSnoozeDailyAlarm: () -> Unit,
     onDismissDailyAlarm: () -> Unit,
+    onRepeatCountdownTimer: () -> Unit,
+    onDismissTimerAlert: () -> Unit,
     onSetThemePreset: (ThemePreset) -> Unit,
     onSelectSleepSound: (SleepSoundMode) -> Unit,
     onToggleWhiteNoise: (Boolean) -> Unit
@@ -251,6 +253,14 @@ fun FlipClockScreen(
                 state = state,
                 onSnooze = onSnoozeDailyAlarm,
                 onDismiss = onDismissDailyAlarm
+            )
+        }
+
+        if (state.isTimerAlertRinging) {
+            TimerAlertDialog(
+                state = state,
+                onRepeat = onRepeatCountdownTimer,
+                onDismiss = onDismissTimerAlert
             )
         }
     }
@@ -591,36 +601,30 @@ private fun BatteryIndicator(
     } ?: return
     val isLow = percent < 30
     val accent = if (isLow) Color(0xFFFFC28C) else LiquidGlassText
-    val shape = RoundedCornerShape(18.dp)
 
     Row(
         modifier = modifier
-            .border(
-                width = 0.5.dp,
-                color = accent.copy(alpha = if (isLow) 0.42f else 0.14f),
-                shape = shape
-            )
             .padding(
-                horizontal = if (compact) 9.dp else 11.dp,
-                vertical = if (compact) 5.dp else 6.dp
+                horizontal = if (compact) 2.dp else 3.dp,
+                vertical = if (compact) 3.dp else 4.dp
             ),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (compact) 7.dp else 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = "$percent%",
             color = accent.copy(alpha = if (isLow) 0.94f else 0.72f),
-            fontSize = if (compact) 10.sp else 11.sp,
+            fontSize = if (compact) 12.sp else 13.sp,
             fontFamily = UiFontFamily,
             fontWeight = if (isLow) FontWeight.SemiBold else FontWeight.Medium
         )
         Canvas(
             modifier = Modifier
-                .width(if (compact) 15.dp else 17.dp)
-                .height(if (compact) 8.dp else 9.dp)
+                .width(if (compact) 19.dp else 21.dp)
+                .height(if (compact) 10.dp else 11.dp)
         ) {
-            val stroke = 1.1.dp.toPx()
-            val capWidth = 1.8.dp.toPx()
+            val stroke = 1.25.dp.toPx()
+            val capWidth = 2.dp.toPx()
             val bodyWidth = size.width - capWidth - stroke
             val fillWidth = (bodyWidth - stroke * 3f) * (percent / 100f).coerceIn(0f, 1f)
             drawRoundRect(
@@ -1399,6 +1403,129 @@ private fun DailyAlarmDialog(
                     )
                     AlarmDialogActionButton(
                         title = stringResource(id = R.string.alarm_dismiss),
+                        subtitle = null,
+                        titleColor = Color(0xFF1C2531),
+                        subtitleColor = Color(0xFF1C2531).copy(alpha = 0.70f),
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0xFFE5E9EF).copy(alpha = 0.96f),
+                                Color(0xFFB8C0CB).copy(alpha = 0.95f)
+                            )
+                        ),
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(72.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimerAlertDialog(
+    state: ClockState,
+    onRepeat: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF06111D).copy(alpha = 0.58f)),
+        contentAlignment = Alignment.Center
+    ) {
+        val dialogShape = RoundedCornerShape(34.dp)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.82f)
+                .widthIn(max = 520.dp)
+                .clip(dialogShape)
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF1D2938).copy(alpha = 0.94f),
+                            Color(0xFF111A26).copy(alpha = 0.97f),
+                            Color(0xFF0B121C).copy(alpha = 0.98f)
+                        )
+                    ),
+                    shape = dialogShape
+                )
+                .border(
+                    width = 0.6.dp,
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.28f),
+                            Color.White.copy(alpha = 0.08f)
+                        )
+                    ),
+                    shape = dialogShape
+                )
+                .drawWithContent {
+                    drawContent()
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.05f),
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.08f)
+                            )
+                        )
+                    )
+                }
+                .padding(horizontal = 24.dp, vertical = 22.dp)
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    text = stringResource(id = R.string.timer_dialog_title),
+                    color = LiquidGlassText,
+                    fontSize = 28.sp,
+                    fontFamily = UiFontFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = formatCountdownLabel(state.countdownDurationMinutes * 60),
+                    color = LiquidGlassText.copy(alpha = 0.90f),
+                    fontSize = 46.sp,
+                    fontFamily = UiFontFamily,
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = stringResource(id = R.string.timer_dialog_body),
+                    color = LiquidGlassText.copy(alpha = 0.60f),
+                    fontSize = 13.sp,
+                    fontFamily = UiFontFamily,
+                    textAlign = TextAlign.Center
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AlarmDialogActionButton(
+                        title = stringResource(id = R.string.timer_repeat_title),
+                        subtitle = stringResource(id = R.string.timer_repeat_subtitle, state.countdownDurationMinutes),
+                        titleColor = Color.White,
+                        subtitleColor = Color.White.copy(alpha = 0.72f),
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0xFF4C9DFF),
+                                Color(0xFF1464DD)
+                            )
+                        ),
+                        onClick = onRepeat,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(72.dp)
+                    )
+                    AlarmDialogActionButton(
+                        title = stringResource(id = R.string.timer_stop),
                         subtitle = null,
                         titleColor = Color(0xFF1C2531),
                         subtitleColor = Color(0xFF1C2531).copy(alpha = 0.70f),

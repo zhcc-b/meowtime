@@ -162,6 +162,8 @@ class MainActivity : ComponentActivity() {
                         onSetDailyAlarmMinute = { viewModel.setDailyAlarmMinute(it) },
                         onSnoozeDailyAlarm = { viewModel.snoozeDailyAlarm() },
                         onDismissDailyAlarm = { viewModel.dismissDailyAlarm() },
+                        onRepeatCountdownTimer = { viewModel.repeatCountdownTimer() },
+                        onDismissTimerAlert = { viewModel.dismissTimerAlert() },
                         onSetThemePreset = { preset: ThemePreset -> viewModel.setThemePreset(preset) },
                         onSelectSleepSound = { mode: SleepSoundMode -> viewModel.setSleepSoundMode(mode) },
                         onToggleWhiteNoise = { viewModel.toggleWhiteNoise(it) }

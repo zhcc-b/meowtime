@@ -76,6 +76,14 @@
     <string name="alarm_dismiss">Turn Off</string>
     <string name="alarm_snoozed_message">Alarm snoozed for 10 minutes.</string>
     <string name="alarm_dismissed_message">Alarm turned off.</string>
+    <string name="timer_alert_now">Timer finished.</string>
+    <string name="timer_dialog_title">Timer</string>
+    <string name="timer_dialog_body">The timer will ring for up to 9 minutes.</string>
+    <string name="timer_repeat_title">Another Timer</string>
+    <string name="timer_repeat_subtitle">%1$d minutes</string>
+    <string name="timer_stop">Stop</string>
+    <string name="timer_repeat_message">Started another timer.</string>
+    <string name="timer_stopped_message">Timer stopped.</string>
     <string name="weather_sunny">Sunny</string>
     <string name="weather_cloudy">Cloudy</string>
     <string name="weather_fog">Fog</string>

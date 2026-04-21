@@ -52,6 +52,7 @@ data class ClockState(
     val dailyAlarmHour: Int = 8,
     val dailyAlarmMinute: Int = 0,
     val isDailyAlarmRinging: Boolean = false,
+    val isTimerAlertRinging: Boolean = false,
     val dailyAlarmSnoozeRemainingSeconds: Int = 0,
     val companionMessage: String = "",
 

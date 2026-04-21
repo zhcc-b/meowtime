@@ -107,6 +107,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private var edgeLightJob: Job? = null
     private var sleepSoundJob: Job? = null
     private var dailyAlarmJob: Job? = null
+    private var timerAlertJob: Job? = null
     private var dailyAlarmSnoozeJob: Job? = null
     private var dailyAlarmSnoozeDeadlineElapsedMs: Long? = null
     private var sleepSoundEndsAtElapsedMs: Long = 0L
@@ -290,13 +291,15 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private data class ClockTickerSideEffects(
         val shouldPlayReminder: Boolean = false,
         val shouldStartDailyAlarm: Boolean = false,
+        val shouldStartTimerAlert: Boolean = false,
         val reminderCue: ReminderCue = ReminderCue.DEFAULT,
         val edgeLightMode: EdgeLightMode? = null,
         val edgeLightDurationMs: Long? = null
     ) {
         fun withModeTick(modeTick: ModeTickResult): ClockTickerSideEffects {
             return copy(
-                shouldPlayReminder = shouldPlayReminder || modeTick.triggerSound,
+                shouldPlayReminder = shouldPlayReminder || (modeTick.triggerSound && !modeTick.shouldStartTimerAlert),
+                shouldStartTimerAlert = shouldStartTimerAlert || modeTick.shouldStartTimerAlert,
                 edgeLightMode = modeTick.edgeLightMode ?: edgeLightMode,
                 edgeLightDurationMs = modeTick.edgeLightDurationMs ?: edgeLightDurationMs
             )
@@ -466,6 +469,9 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         if (sideEffects.shouldStartDailyAlarm) {
             startDailyAlarm()
         }
+        if (sideEffects.shouldStartTimerAlert) {
+            startTimerAlert()
+        }
         if (sideEffects.edgeLightMode != null) {
             showEdgeLight(sideEffects.edgeLightMode, sideEffects.edgeLightDurationMs)
         }
@@ -506,6 +512,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         val state: ClockState,
         val message: String? = null,
         val triggerSound: Boolean = false,
+        val shouldStartTimerAlert: Boolean = false,
         val edgeLightMode: EdgeLightMode? = null,
         val edgeLightDurationMs: Long? = null
     )
@@ -521,6 +528,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
             state = result.state,
             message = result.message.toCompanionMessage(),
             triggerSound = result.triggerSound,
+            shouldStartTimerAlert = result.message == ClockStateReducers.ModeMessage.COUNTDOWN_DONE,
             edgeLightMode = result.edgeLightMode,
             edgeLightDurationMs = result.edgeLightDurationMs
         )
@@ -593,6 +601,30 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private fun stopDailyAlarmSound() {
         dailyAlarmJob?.cancel()
         dailyAlarmJob = null
+        alarmTonePlayer.stop()
+    }
+
+    private fun startTimerAlert() {
+        timerAlertJob?.cancel()
+        alarmTonePlayer.start()
+        showEdgeLight(EdgeLightMode.TIMER_ALERT, DAILY_ALARM_RING_MS)
+        _uiState.update {
+            it.copy(
+                isTimerAlertRinging = true,
+                companionMessage = appContext.getString(R.string.timer_alert_now)
+            )
+        }
+        timerAlertJob = viewModelScope.launch {
+            delay(DAILY_ALARM_RING_MS)
+            stopTimerAlertSound()
+            clearEdgeLight()
+            _uiState.update { it.copy(isTimerAlertRinging = false) }
+        }
+    }
+
+    private fun stopTimerAlertSound() {
+        timerAlertJob?.cancel()
+        timerAlertJob = null
         alarmTonePlayer.stop()
     }
 
@@ -979,6 +1011,31 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         }
     }
 
+    fun repeatCountdownTimer() {
+        stopTimerAlertSound()
+        clearEdgeLight()
+        _uiState.update {
+            it.copy(
+                clockMode = ClockMode.COUNTDOWN,
+                timerRunning = true,
+                isTimerAlertRinging = false,
+                countdownRemainingSeconds = it.countdownDurationMinutes * 60,
+                companionMessage = appContext.getString(R.string.timer_repeat_message)
+            )
+        }
+    }
+
+    fun dismissTimerAlert() {
+        stopTimerAlertSound()
+        clearEdgeLight()
+        _uiState.update {
+            it.copy(
+                isTimerAlertRinging = false,
+                companionMessage = appContext.getString(R.string.timer_stopped_message)
+            )
+        }
+    }
+
     private fun clearDailyAlarmSnooze() {
         dailyAlarmSnoozeJob?.cancel()
         dailyAlarmSnoozeJob = null
@@ -1171,6 +1228,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         edgeLightJob?.cancel()
         sleepSoundJob?.cancel()
         dailyAlarmJob?.cancel()
+        timerAlertJob?.cancel()
         dailyAlarmSnoozeJob?.cancel()
         stopClockTicker()
         unregisterRotationSensor()

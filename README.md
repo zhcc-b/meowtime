@@ -25,7 +25,7 @@ MeowTime is a full-screen ambient clock for Android, built with Kotlin and Jetpa
 15. Weather-linked cat behavior: the cat reacts differently to rain, snow, wind, hail, and calm weather.
 16. Burn-in protection: always-on micro-shift and opacity behavior for long-running display use.
 17. Location and date display: lightweight glass information card for city/date/weekday, with device location first and HTTPS IP fallback.
-18. Battery indicator: subtle top-right battery percentage and icon.
+18. Battery indicator: subtle top-right battery percentage and icon integrated into the settings glass card, with a warm low-battery accent.
 19. Local font bundle: Google-font-based clock fonts are packaged in-app, so the UI does not depend on online font loading or Google Play Services.
 20. Persistent settings: user choices are stored with DataStore Preferences.
 21. Chinese resources: Simplified Chinese strings are included under `values-zh-rCN`.
@@ -34,7 +34,7 @@ MeowTime is a full-screen ambient clock for Android, built with Kotlin and Jetpa
 
 - `Clock`: ambient full-screen time display with date, location, theme, weather particles, cat, and alarm indicator.
 - `Pomodoro`: focus/break timer with configurable focus and break lengths, progress display, completion alert, and cat feedback.
-- `Countdown`: configurable countdown timer with completion alert and alarm-style visual feedback.
+- `Countdown`: configurable countdown timer with alarm-tone completion, TIMER_ALERT edge lighting, and a dialog to repeat the same duration or stop.
 - `Stopwatch`: elapsed-time tracking with automatic 30-minute break reminder edge lighting.
 
 ## Visual System
@@ -42,6 +42,7 @@ MeowTime is a full-screen ambient clock for Android, built with Kotlin and Jetpa
 - Liquid glass panels use layered transparency, soft borders, and dark blue/grey night tones.
 - Flip tiles are calibrated separately for landscape and portrait so the clock remains the visual center.
 - Edge lighting is always available as a theme layer and becomes more prominent for alerts.
+- Timer completion uses the same stronger audible/visual alert language as alarms, but keeps timer-specific actions (`Another Timer` and `Stop`).
 - Weather particles stay behind the main clock and do not require network weather APIs.
 - The cat layer is rendered below the time digits so it cannot obscure the clock.
 
