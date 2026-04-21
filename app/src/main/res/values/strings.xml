@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Mytime</string>
+    <string name="app_name">Meow Clock</string>
     <string name="settings_title">Settings</string>
     <string name="settings_subtitle">Liquid controls</string>
     <string name="settings_gyroscope">Gyroscope 3D</string>
