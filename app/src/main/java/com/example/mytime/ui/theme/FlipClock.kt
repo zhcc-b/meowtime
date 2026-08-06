@@ -92,7 +92,6 @@ fun FlipClockScreen(
     onSetPomodoroFocus: (Int) -> Unit,
     onSetPomodoroBreak: (Int) -> Unit,
     onSetCountdown: (Int) -> Unit,
-    onToggleHourlyChime: (Boolean) -> Unit,
     onToggleDailyAlarm: (Boolean) -> Unit,
     onSetDailyAlarmHour: (Int) -> Unit,
     onSetDailyAlarmMinute: (Int) -> Unit,
@@ -115,6 +114,7 @@ fun FlipClockScreen(
     val playfulPresetInfo = stringResource(id = R.string.theme_info_playful)
     val serenePresetInfo = stringResource(id = R.string.theme_info_serene)
     val nightPresetInfo = stringResource(id = R.string.theme_info_night)
+    val isNightQuietHours = state.currentHour24 >= 23 || state.currentHour24 < 7
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 1. 背景层
@@ -132,7 +132,7 @@ fun FlipClockScreen(
                     (-safeParallax.y * 0.3f).roundToInt()
                 )
             }
-            .alpha(if (state.isSettingsVisible) 0.24f else 0.6f)
+            .alpha(if (state.isSettingsVisible) 0.24f else if (isNightQuietHours) 0.9f else 0.6f)
 
         state.backgroundRes?.let { resId ->
             Image(
@@ -140,12 +140,19 @@ fun FlipClockScreen(
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = backgroundModifier,
-                colorFilter = ColorFilter.tint(Color.Black.copy(alpha = 0.5f), BlendMode.Multiply)
+                colorFilter = ColorFilter.tint(
+                    Color.Black.copy(alpha = if (isNightQuietHours) 0.18f else 0.5f),
+                    BlendMode.Multiply
+                )
             )
         }
 
-        Box(modifier = Modifier.alpha(if (state.isSettingsVisible) 0.22f else 1f)) {
-            SeamlessParticleLayer(weather = state.particleWeather)
+        Box(
+            modifier = Modifier.alpha(
+                if (state.isSettingsVisible) 0.22f else if (isNightQuietHours) 0.55f else 1f
+            )
+        ) {
+            SeamlessParticleLayer(weather = state.particleWeather, nightMode = isNightQuietHours)
         }
 
         FilamentCatOverlay(
@@ -215,7 +222,6 @@ fun FlipClockScreen(
             onSelectParticleWeather = onSelectParticleWeather,
             onToggleCats = onToggleCats,
             onToggle24HourFormat = onToggle24HourFormat,
-            onToggleHourlyChime = onToggleHourlyChime,
             onToggleDailyAlarm = onToggleDailyAlarm,
             onSetDailyAlarmHour = onSetDailyAlarmHour,
             onSetDailyAlarmMinute = onSetDailyAlarmMinute,
@@ -842,6 +848,17 @@ private fun PortraitClockContent(
             )
         }
 
+        if (state.clockMode == ClockMode.CLOCK && state.hourlyForecast.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            HourlyForecastCard(
+                state = state,
+                fullWidth = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = if (isCompactPortrait) 10.dp else 16.dp)
+            )
+        }
+
         Spacer(modifier = Modifier.height(14.dp))
 
         PomodoroInfoCard(
@@ -923,6 +940,15 @@ private fun DateDayBlock(state: ClockState, footerFontSize: TextUnit, modifier: 
                 letterSpacing = 1.sp,
                 maxLines = 1
             )
+            state.temperatureLabel()?.let { temperature ->
+                Text(
+                    text = temperature,
+                    color = LiquidGlassText.copy(alpha = 0.58f),
+                    fontSize = (footerFontSize.value * 0.68f).sp,
+                    fontFamily = UiFontFamily,
+                    maxLines = 1
+                )
+            }
         }
     }
 }
@@ -935,14 +961,25 @@ private fun LandscapeDateLocationBlock(state: ClockState, modifier: Modifier = M
         modifier = modifier.widthIn(min = 190.dp, max = 330.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(
-                text = state.location,
-                color = LiquidGlassText.copy(alpha = 0.82f),
-                fontSize = 16.sp,
-                fontFamily = UiFontFamily,
-                letterSpacing = 1.3.sp,
-                maxLines = 1
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = state.location,
+                    color = LiquidGlassText.copy(alpha = 0.82f),
+                    fontSize = 16.sp,
+                    fontFamily = UiFontFamily,
+                    letterSpacing = 1.3.sp,
+                    maxLines = 1
+                )
+                state.temperatureLabel()?.let { temperature ->
+                    Text(
+                        text = temperature,
+                        color = LiquidGlassText.copy(alpha = 0.68f),
+                        fontSize = 14.sp,
+                        fontFamily = UiFontFamily,
+                        maxLines = 1
+                    )
+                }
+            }
             Text(
                 text = "${state.date} · ${state.dayOfWeek}",
                 color = LiquidGlassText.copy(alpha = 0.76f),
@@ -951,6 +988,16 @@ private fun LandscapeDateLocationBlock(state: ClockState, modifier: Modifier = M
                 maxLines = 1
             )
         }
+    }
+}
+
+private fun ClockState.temperatureLabel(): String? {
+    val temperature = temperatureCelsius?.roundToInt() ?: return null
+    val apparent = apparentTemperatureCelsius?.roundToInt()
+    return if (apparent == null) {
+        "${temperature}°C"
+    } else {
+        "${temperature}°C · 体感 ${apparent}°C"
     }
 }
 
@@ -1138,6 +1185,17 @@ private fun LandscapeClockContent(
                 .padding(bottom = 18.dp)
         )
 
+        if (state.clockMode == ClockMode.CLOCK && state.hourlyForecast.isNotEmpty()) {
+            HourlyForecastCard(
+                state = state,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    // The daily alarm card occupies the lower-right corner. Keep the
+                    // forecast on the same baseline and slide it left to avoid overlap.
+                    .padding(end = if (state.dailyAlarmEnabled) 124.dp else 18.dp, bottom = 18.dp)
+            )
+        }
+
         if (state.clockMode != ClockMode.CLOCK) {
             if (controlsCollapsed) {
                 RunningControlOrb(
@@ -1173,6 +1231,45 @@ private fun LandscapeClockContent(
             )
         }
     }
+}
+
+@Composable
+private fun HourlyForecastCard(
+    state: ClockState,
+    modifier: Modifier = Modifier,
+    fullWidth: Boolean = false
+) {
+    SettingsCardSurface(
+        shape = RoundedCornerShape(20.dp),
+        padding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+        // Landscape forecasts should hug their two short text rows instead of reserving
+        // a fixed empty area on the right. Portrait deliberately uses the full row.
+        modifier = if (fullWidth) modifier else modifier.widthIn(max = 230.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            state.hourlyForecast.take(2).forEach { forecast ->
+                Text(
+                    text = "${forecast.time}  ${forecast.weather.forecastLabel()} · ${forecast.temperatureCelsius.roundToInt()}°C",
+                    color = LiquidGlassText.copy(alpha = 0.76f),
+                    fontSize = 13.sp,
+                    fontFamily = UiFontFamily,
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+private fun ParticleWeather.forecastLabel(): String = when (this) {
+    ParticleWeather.SUNNY -> "晴"
+    ParticleWeather.CLOUDY -> "多云"
+    ParticleWeather.FOG -> "雾"
+    ParticleWeather.DRIZZLE -> "小雨"
+    ParticleWeather.RAIN -> "雨"
+    ParticleWeather.SNOW -> "雪"
+    ParticleWeather.BLIZZARD -> "暴雪"
+    ParticleWeather.HAIL -> "冰雹"
+    ParticleWeather.WIND -> "风"
 }
 
 @Composable

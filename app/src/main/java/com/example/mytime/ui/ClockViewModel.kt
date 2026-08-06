@@ -15,8 +15,6 @@ import android.location.Geocoder
 import android.location.Location
 import android.location.LocationManager
 import android.media.MediaPlayer
-import android.media.AudioManager
-import android.media.ToneGenerator
 import android.media.audiofx.LoudnessEnhancer
 import android.os.BatteryManager
 import android.os.Build
@@ -34,6 +32,9 @@ import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mytime.R
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -45,11 +46,17 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.ZonedDateTime
+import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.time.format.TextStyle
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.Locale
+import org.json.JSONObject
 import kotlin.coroutines.resume
 import kotlin.math.abs
 import kotlin.random.Random
@@ -66,7 +73,6 @@ private object PreferenceKeys {
     val pomodoroFocusMinutes = intPreferencesKey("pomodoro_focus_minutes")
     val pomodoroBreakMinutes = intPreferencesKey("pomodoro_break_minutes")
     val countdownDurationMinutes = intPreferencesKey("countdown_duration_minutes")
-    val hourlyChime = booleanPreferencesKey("hourly_chime")
     val dailyAlarmEnabled = booleanPreferencesKey("daily_alarm_enabled")
     val dailyAlarmHour = intPreferencesKey("daily_alarm_hour")
     val dailyAlarmMinute = intPreferencesKey("daily_alarm_minute")
@@ -76,11 +82,6 @@ private object PreferenceKeys {
 }
 
 class ClockViewModel(application: Application) : AndroidViewModel(application), SensorEventListener {
-
-    private enum class ReminderCue {
-        DEFAULT,
-        HOURLY_CHIME
-    }
 
     private val _uiState = MutableStateFlow(ClockState())
     val uiState: StateFlow<ClockState> = _uiState.asStateFlow()
@@ -93,6 +94,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         get() = getApplication<Application>().applicationContext
     private val sensorManager = application.applicationContext.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+    private val fusedLocationClient by lazy { LocationServices.getFusedLocationProviderClient(appContext) }
     private val locale = Locale.getDefault()
     private val dateFormatter = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(locale)
     private val amPmFormatter = DateTimeFormatter.ofPattern("a", locale)
@@ -100,9 +102,12 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
 
     private var basePitch: Float? = null
     private var baseRoll: Float? = null
+    private var deviceLatitude: Double? = null
+    private var deviceLongitude: Double? = null
     private var smoothParallax = Offset.Zero
     private var lastSensorUpdateTimeMs = 0L
     private var locationJob: Job? = null
+    private var weatherJob: Job? = null
     private var tickerJob: Job? = null
     private var edgeLightJob: Job? = null
     private var sleepSoundJob: Job? = null
@@ -113,7 +118,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private var sleepSoundEndsAtElapsedMs: Long = 0L
     private var sensorRegistered = false
     private var isAppActive = false
-    private var lastHourlyChimeMarker = ""
     private var lastDailyAlarmMarker = ""
 
     private val batteryReceiver = object : BroadcastReceiver() {
@@ -175,7 +179,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         } else {
                             state.countdownRemainingSeconds
                         },
-                        hourlyChimeEnabled = preferences[PreferenceKeys.hourlyChime] ?: state.hourlyChimeEnabled,
                         dailyAlarmEnabled = preferences[PreferenceKeys.dailyAlarmEnabled] ?: state.dailyAlarmEnabled,
                         dailyAlarmHour = preferences[PreferenceKeys.dailyAlarmHour] ?: state.dailyAlarmHour,
                         dailyAlarmMinute = preferences[PreferenceKeys.dailyAlarmMinute] ?: state.dailyAlarmMinute,
@@ -215,7 +218,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                     requestedWeather = currentState.particleWeather,
                     isAuto = currentState.isParticleWeatherAuto,
                     resolvedPreset = resolvedPreset,
-                    timeTick = timeTick
+                    timeTick = timeTick,
+                    realWeather = currentState.realWeather
                 )
 
                 var sideEffects = ClockTickerSideEffects()
@@ -243,8 +247,9 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         amPm = timeTick.amPm,
                         date = timeTick.date,
                         dayOfWeek = timeTick.dayOfWeek,
-                        // Avoid bright/sunny background imagery during quiet night hours.
-                        backgroundRes = if (timeTick.isNightQuietHours) null else R.drawable.jiguang,
+                        // The night wallpaper keeps the clock legible while real weather
+                        // particles remain visible as a subtle foreground layer.
+                        backgroundRes = if (timeTick.isNightQuietHours) R.drawable.night_sky else R.drawable.jiguang,
                         particleWeather = if (workingState.isParticleWeatherAuto) activeWeather else workingState.particleWeather,
                         burnInOffset = burnInOffset,
                         dailyAlarmSnoozeRemainingSeconds = alarmTick.snoozeRemainingSeconds,
@@ -283,16 +288,13 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         val state: ClockState,
         val snoozeRemainingSeconds: Int,
         val companionMessage: String,
-        val shouldPlayReminder: Boolean = false,
-        val shouldStartDailyAlarm: Boolean = false,
-        val reminderCue: ReminderCue = ReminderCue.DEFAULT
+        val shouldStartDailyAlarm: Boolean = false
     )
 
     private data class ClockTickerSideEffects(
         val shouldPlayReminder: Boolean = false,
         val shouldStartDailyAlarm: Boolean = false,
         val shouldStartTimerAlert: Boolean = false,
-        val reminderCue: ReminderCue = ReminderCue.DEFAULT,
         val edgeLightMode: EdgeLightMode? = null,
         val edgeLightDurationMs: Long? = null
     ) {
@@ -307,9 +309,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
 
         fun withAlarmTick(alarmTick: AlarmTickResult): ClockTickerSideEffects {
             return copy(
-                shouldPlayReminder = shouldPlayReminder || alarmTick.shouldPlayReminder,
-                shouldStartDailyAlarm = shouldStartDailyAlarm || alarmTick.shouldStartDailyAlarm,
-                reminderCue = if (alarmTick.shouldPlayReminder) alarmTick.reminderCue else reminderCue
+                shouldStartDailyAlarm = shouldStartDailyAlarm || alarmTick.shouldStartDailyAlarm
             )
         }
     }
@@ -346,11 +346,19 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         requestedWeather: ParticleWeather,
         isAuto: Boolean,
         resolvedPreset: ThemePreset,
-        timeTick: TimeTick
+        timeTick: TimeTick,
+        realWeather: ParticleWeather? = null
     ): ParticleWeather {
         if (!isAuto) {
             activeWeather = requestedWeather
             nextChangeEpochSec = timeTick.epochSecond + WEATHER_ROTATION_INTERVAL_SEC
+            return activeWeather
+        }
+
+        if (realWeather != null) {
+            // A dedicated night backdrop handles the time-of-day mood, so retain the
+            // actual weather effect instead of substituting it with wind or fog.
+            activeWeather = realWeather
             return activeWeather
         }
 
@@ -417,12 +425,9 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         timeTick: TimeTick,
         companionMessage: String
     ): AlarmTickResult {
-        val hourlyMarker = "${timeTick.date}-${timeTick.hour24}"
         val dailyMarker = "${timeTick.date}-${state.dailyAlarmHour}-${state.dailyAlarmMinute}"
         var nextMessage = companionMessage
-        var shouldPlayReminder = false
         var shouldStartDailyAlarm = false
-        var reminderCue = ReminderCue.DEFAULT
         val snoozeRemainingSeconds = dailyAlarmSnoozeDeadlineElapsedMs
             ?.let { deadline ->
                 (((deadline - SystemClock.elapsedRealtime()) + 999L) / 1000L)
@@ -431,12 +436,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
             }
             ?: 0
 
-        if (state.hourlyChimeEnabled && timeTick.minute == 0 && timeTick.second == 0 && hourlyMarker != lastHourlyChimeMarker) {
-            lastHourlyChimeMarker = hourlyMarker
-            shouldPlayReminder = true
-            reminderCue = ReminderCue.HOURLY_CHIME
-            nextMessage = appContext.getString(R.string.reminder_hourly_chime, timeTick.displayHour)
-        }
         if (
             ClockStateReducers.shouldTriggerDailyAlarm(
                 state = state,
@@ -456,15 +455,13 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
             state = state,
             snoozeRemainingSeconds = snoozeRemainingSeconds,
             companionMessage = nextMessage,
-            shouldPlayReminder = shouldPlayReminder,
-            shouldStartDailyAlarm = shouldStartDailyAlarm,
-            reminderCue = reminderCue
+            shouldStartDailyAlarm = shouldStartDailyAlarm
         )
     }
 
     private fun runTickerSideEffects(sideEffects: ClockTickerSideEffects) {
         if (sideEffects.shouldPlayReminder) {
-            playReminderCue(sideEffects.reminderCue)
+            playAudio()
         }
         if (sideEffects.shouldStartDailyAlarm) {
             startDailyAlarm()
@@ -565,21 +562,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         )
     }
 
-    private fun playReminderCue(cue: ReminderCue = ReminderCue.DEFAULT) {
-        when (cue) {
-            ReminderCue.DEFAULT -> playAudio()
-            ReminderCue.HOURLY_CHIME -> playSystemChime()
-        }
-    }
-
-    private fun playSystemChime() {
-        val tone = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 90)
-        runCatching {
-            tone.startTone(ToneGenerator.TONE_PROP_BEEP2, 260)
-        }
-        tone.release()
-    }
-
     private fun startDailyAlarm() {
         dailyAlarmJob?.cancel()
         alarmTonePlayer.start()
@@ -631,15 +613,36 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     fun fetchLocation(hasLocationPermission: Boolean) {
         locationJob?.cancel()
         locationJob = viewModelScope.launch(Dispatchers.IO) {
-            val city = if (hasLocationPermission) fetchCityFromDeviceLocation() else null
+            DiagnosticLogger.log("LOCATION", "refresh requested; permission=$hasLocationPermission")
+            val location = if (hasLocationPermission) fetchDeviceLocation() else null
+            val city = location?.let { reverseGeocodeCity(it) }
             _uiState.update {
                 it.copy(location = city?.uppercase(locale) ?: appContext.getString(R.string.location_unavailable))
+            }
+            if (location != null) {
+                deviceLatitude = location.latitude
+                deviceLongitude = location.longitude
+                DiagnosticLogger.log(
+                    "LOCATION",
+                    "location resolved; provider=${location.provider ?: "unknown"}, accuracy=${location.accuracy}m, city=${city ?: "unavailable"}"
+                )
+                fetchAndApplyWeather()
+                if (isAppActive) startWeatherRefresh()
+            } else {
+                deviceLatitude = null
+                deviceLongitude = null
+                stopWeatherRefresh()
+                DiagnosticLogger.log("LOCATION", "location unavailable")
             }
         }
     }
 
     @SuppressLint("MissingPermission")
-    private suspend fun fetchCityFromDeviceLocation(): String? {
+    private suspend fun fetchDeviceLocation(): Location? {
+        // When Google Play services is present, its fused provider combines GPS, Wi-Fi and
+        // cell sources and is much more reliable than a single MIUI system provider.
+        requestGoogleFusedLocation()?.let { return it }
+
         return runCatching {
             val locationManager = appContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
             val providers = locationManager.getProviders(true)
@@ -651,8 +654,151 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                 }
             }
             bestLocation ?: requestFreshLocation(locationManager)
-        }.getOrNull()?.let { location ->
-            reverseGeocodeCity(location)
+        }.getOrNull()
+    }
+
+    @SuppressLint("MissingPermission")
+    private suspend fun requestGoogleFusedLocation(): Location? {
+        return withTimeoutOrNull(GOOGLE_LOCATION_TIMEOUT_MS) {
+            suspendCancellableCoroutine { continuation ->
+                val cancellationToken = CancellationTokenSource()
+                continuation.invokeOnCancellation { cancellationToken.cancel() }
+                fusedLocationClient
+                    .getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cancellationToken.token)
+                    .addOnSuccessListener { location ->
+                        if (continuation.isActive) continuation.resume(location)
+                    }
+                    .addOnFailureListener {
+                        if (continuation.isActive) continuation.resume(null)
+                    }
+                    .addOnCanceledListener {
+                        if (continuation.isActive) continuation.resume(null)
+                    }
+            }
+        }
+    }
+
+    private fun startWeatherRefresh() {
+        weatherJob?.cancel()
+        weatherJob = viewModelScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                delay(WEATHER_REFRESH_INTERVAL_MS)
+                fetchAndApplyWeather()
+            }
+        }
+    }
+
+    private fun stopWeatherRefresh() {
+        weatherJob?.cancel()
+        weatherJob = null
+    }
+
+    private fun fetchAndApplyWeather() {
+        val latitude = deviceLatitude ?: return
+        val longitude = deviceLongitude ?: return
+        val weather = fetchWeatherFromApi(latitude, longitude)
+        if (weather == null) {
+            DiagnosticLogger.log("WEATHER", "request failed")
+            return
+        }
+        _uiState.update {
+            it.copy(
+                realWeather = weather.particleWeather,
+                temperatureCelsius = weather.temperatureCelsius,
+                apparentTemperatureCelsius = weather.apparentTemperatureCelsius,
+                hourlyForecast = weather.hourlyForecast
+            )
+        }
+        DiagnosticLogger.log(
+            "WEATHER",
+            "updated; effect=${weather.particleWeather}, temp=${weather.temperatureCelsius}, apparent=${weather.apparentTemperatureCelsius}"
+        )
+    }
+
+    private data class LiveWeather(
+        val particleWeather: ParticleWeather,
+        val temperatureCelsius: Double?,
+        val apparentTemperatureCelsius: Double?,
+        val windSpeedKmh: Double?,
+        val windGustKmh: Double?,
+        val hourlyForecast: List<HourlyForecast>
+    )
+
+    private fun fetchWeatherFromApi(latitude: Double, longitude: Double): LiveWeather? {
+        val connection = runCatching {
+            URL(
+                "https://api.open-meteo.com/v1/forecast?latitude=$latitude" +
+                    "&longitude=$longitude&current=weather_code,temperature_2m,apparent_temperature" +
+                    ",wind_speed_10m,wind_gusts_10m" +
+                    "&hourly=temperature_2m,weather_code&forecast_days=1&timezone=auto" +
+                    "&temperature_unit=celsius"
+            ).openConnection() as HttpURLConnection
+        }.getOrNull() ?: return null
+
+        return try {
+            connection.connectTimeout = 10_000
+            connection.readTimeout = 10_000
+            connection.inputStream.bufferedReader().use { reader ->
+                val response = JSONObject(reader.readText())
+                val current = response.getJSONObject("current")
+                val windSpeedKmh = current.optDouble("wind_speed_10m", Double.NaN).takeIf { it.isFinite() }
+                val windGustKmh = current.optDouble("wind_gusts_10m", Double.NaN).takeIf { it.isFinite() }
+                val mappedWeather = wmoCodeToParticleWeather(current.getInt("weather_code"))
+                LiveWeather(
+                    particleWeather = mappedWeather.withWindOverride(windSpeedKmh, windGustKmh),
+                    temperatureCelsius = current.optDouble("temperature_2m", Double.NaN).takeIf { it.isFinite() },
+                    apparentTemperatureCelsius = current.optDouble("apparent_temperature", Double.NaN)
+                        .takeIf { it.isFinite() },
+                    windSpeedKmh = windSpeedKmh,
+                    windGustKmh = windGustKmh,
+                    hourlyForecast = parseHourlyForecast(response)
+                )
+            }
+        } catch (_: Exception) {
+            null
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun parseHourlyForecast(response: JSONObject): List<HourlyForecast> {
+        val hourly = response.optJSONObject("hourly") ?: return emptyList()
+        val times = hourly.optJSONArray("time") ?: return emptyList()
+        val temperatures = hourly.optJSONArray("temperature_2m") ?: return emptyList()
+        val codes = hourly.optJSONArray("weather_code") ?: return emptyList()
+        val size = minOf(times.length(), temperatures.length(), codes.length())
+        val nowKey = LocalDateTime.now().plusHours(1).withMinute(0).withSecond(0).withNano(0).toString()
+        val firstUpcoming = (0 until size).firstOrNull { times.getString(it) >= nowKey } ?: return emptyList()
+        return listOf(firstUpcoming, firstUpcoming + 4)
+            .filter { it < size }
+            .map { index ->
+                HourlyForecast(
+                    time = times.getString(index).substringAfter('T'),
+                    weather = wmoCodeToParticleWeather(codes.getInt(index)),
+                    temperatureCelsius = temperatures.getDouble(index)
+                )
+            }
+    }
+
+    private fun wmoCodeToParticleWeather(code: Int): ParticleWeather = when (code) {
+        0, 1 -> ParticleWeather.SUNNY
+        2, 3 -> ParticleWeather.CLOUDY
+        45, 48 -> ParticleWeather.FOG
+        51, 53, 61, 80 -> ParticleWeather.DRIZZLE
+        55, 56, 57, 63, 65, 66, 67, 81, 82, 95 -> ParticleWeather.RAIN
+        71, 73, 77, 85 -> ParticleWeather.SNOW
+        75, 86 -> ParticleWeather.BLIZZARD
+        96, 99 -> ParticleWeather.HAIL
+        else -> ParticleWeather.CLOUDY
+    }
+
+    private fun ParticleWeather.withWindOverride(windSpeedKmh: Double?, windGustKmh: Double?): ParticleWeather {
+        val isWindy = (windSpeedKmh ?: 0.0) >= WIND_EFFECT_SPEED_KMH ||
+            (windGustKmh ?: 0.0) >= WIND_EFFECT_GUST_KMH
+        return if (isWindy && this in setOf(ParticleWeather.SUNNY, ParticleWeather.CLOUDY, ParticleWeather.FOG)) {
+            ParticleWeather.WIND
+        } else {
+            this
         }
     }
 
@@ -707,36 +853,41 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
 
     private suspend fun reverseGeocodeCity(location: Location): String? {
         val geocoder = Geocoder(appContext, locale)
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            suspendCancellableCoroutine { continuation ->
-                geocoder.getFromLocation(
-                    location.latitude,
-                    location.longitude,
-                    1,
-                    object : Geocoder.GeocodeListener {
-                        override fun onGeocode(addresses: MutableList<Address>) {
-                            val city = addresses.firstOrNull()?.locality
-                                ?: addresses.firstOrNull()?.subAdminArea
-                                ?: addresses.firstOrNull()?.adminArea
-                            if (continuation.isActive) {
-                                continuation.resume(city)
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                suspendCancellableCoroutine { continuation ->
+                    geocoder.getFromLocation(
+                        location.latitude,
+                        location.longitude,
+                        1,
+                        object : Geocoder.GeocodeListener {
+                            override fun onGeocode(addresses: MutableList<Address>) {
+                                val city = addresses.firstOrNull()?.locality
+                                    ?: addresses.firstOrNull()?.subAdminArea
+                                    ?: addresses.firstOrNull()?.adminArea
+                                if (continuation.isActive) {
+                                    continuation.resume(city)
+                                }
                             }
-                        }
 
-                        override fun onError(errorMessage: String?) {
-                            if (continuation.isActive) {
-                                continuation.resume(null)
+                            override fun onError(errorMessage: String?) {
+                                if (continuation.isActive) {
+                                    continuation.resume(null)
+                                }
                             }
                         }
-                    }
-                )
+                    )
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
+                addresses?.firstOrNull()?.locality
+                    ?: addresses?.firstOrNull()?.subAdminArea
+                    ?: addresses?.firstOrNull()?.adminArea
             }
-        } else {
-            @Suppress("DEPRECATION")
-            val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
-            addresses?.firstOrNull()?.locality
-                ?: addresses?.firstOrNull()?.subAdminArea
-                ?: addresses?.firstOrNull()?.adminArea
+        } catch (_: IOException) {
+            // Emulator/device geocoding can time out; location is optional for the clock UI.
+            null
         }
     }
 
@@ -949,11 +1100,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         persistSetting { this[PreferenceKeys.is24Hour] = enabled }
     }
 
-    fun toggleHourlyChime(enabled: Boolean) {
-        _uiState.update { it.copy(hourlyChimeEnabled = enabled) }
-        persistSetting { this[PreferenceKeys.hourlyChime] = enabled }
-    }
-
     fun toggleDailyAlarm(enabled: Boolean) {
         _uiState.update { it.copy(dailyAlarmEnabled = enabled) }
         if (!enabled) {
@@ -1139,9 +1285,11 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         if (active) {
             startClockTicker()
             registerRotationSensorIfNeeded()
+            if (deviceLatitude != null && deviceLongitude != null) startWeatherRefresh()
         } else {
             stopClockTicker()
             unregisterRotationSensor()
+            stopWeatherRefresh()
         }
     }
 
@@ -1176,7 +1324,9 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         }
 
         val nowMs = SystemClock.elapsedRealtime()
-        if (nowMs - lastSensorUpdateTimeMs < 16L) {
+        // Parallax does not need display-refresh-rate sensor updates.  Throttling this
+        // prevents a continuous full-screen Compose redraw while the phone is resting.
+        if (nowMs - lastSensorUpdateTimeMs < PARALLAX_UPDATE_INTERVAL_MS) {
             return
         }
         lastSensorUpdateTimeMs = nowMs
@@ -1224,6 +1374,13 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
+    private companion object {
+        const val PARALLAX_UPDATE_INTERVAL_MS = 100L
+        const val GOOGLE_LOCATION_TIMEOUT_MS = 12_000L
+        const val WIND_EFFECT_SPEED_KMH = 25.0
+        const val WIND_EFFECT_GUST_KMH = 40.0
+    }
+
     override fun onCleared() {
         edgeLightJob?.cancel()
         sleepSoundJob?.cancel()
@@ -1234,6 +1391,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         unregisterRotationSensor()
         runCatching { appContext.unregisterReceiver(batteryReceiver) }
         locationJob?.cancel()
+        stopWeatherRefresh()
         mediaPlayer?.release()
         loudnessEnhancer?.release()
         whiteNoisePlayer.stop()
@@ -1248,6 +1406,7 @@ private const val SLEEP_SOUND_DURATION_MS = 60L * 60L * 1000L
 private const val DAILY_ALARM_RING_MS = 9L * 60L * 1000L
 private const val DAILY_ALARM_SNOOZE_MS = 10L * 60L * 1000L
 private const val WEATHER_ROTATION_INTERVAL_SEC = 8L * 60L * 60L
+private const val WEATHER_REFRESH_INTERVAL_MS = 30L * 60L * 1000L
 private const val TIMER_ALERT_EDGE_MS = 5_000L
 private const val BREAK_NUDGE_INTERVAL_SEC = 30 * 60
 private const val BREAK_NUDGE_EDGE_MS = 10_000L

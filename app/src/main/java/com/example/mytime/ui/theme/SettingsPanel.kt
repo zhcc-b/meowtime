@@ -75,7 +75,6 @@ internal fun SettingsMenu(
     onSelectParticleWeather: (ParticleWeather) -> Unit,
     onToggleCats: (Boolean) -> Unit,
     onToggle24HourFormat: (Boolean) -> Unit,
-    onToggleHourlyChime: (Boolean) -> Unit,
     onToggleDailyAlarm: (Boolean) -> Unit,
     onSetDailyAlarmHour: (Int) -> Unit,
     onSetDailyAlarmMinute: (Int) -> Unit,
@@ -131,9 +130,10 @@ internal fun SettingsMenu(
                         )
                         HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
                         SettingToggle(stringResource(id = R.string.settings_gyroscope), state.isParallaxEnabled, onToggleParallax)
-                        ParticleWeatherSelector(
-                            isAuto = state.isParticleWeatherAuto,
-                            selected = state.particleWeather,
+            ParticleWeatherSelector(
+                isAuto = state.isParticleWeatherAuto,
+                hasRealWeather = state.realWeather != null,
+                selected = state.particleWeather,
                             onToggleAuto = onToggleParticleWeatherAuto,
                             onSelectWeather = onSelectParticleWeather
                         )
@@ -152,7 +152,6 @@ internal fun SettingsMenu(
                             active = state.activeThemePreset,
                             onSelect = onSetThemePreset
                         )
-                        SettingToggle(stringResource(id = R.string.settings_hourly_chime), state.hourlyChimeEnabled, onToggleHourlyChime)
                         DailyAlarmCard(
                             enabled = state.dailyAlarmEnabled,
                             hour = state.dailyAlarmHour,
@@ -212,6 +211,7 @@ internal fun SettingsMenu(
 @Composable
 private fun ParticleWeatherSelector(
     isAuto: Boolean,
+    hasRealWeather: Boolean,
     selected: ParticleWeather,
     onToggleAuto: (Boolean) -> Unit,
     onSelectWeather: (ParticleWeather) -> Unit
@@ -234,7 +234,13 @@ private fun ParticleWeatherSelector(
                         onClick = { onToggleAuto(true) }
                     ) {
                         Text(
-                            text = stringResource(id = R.string.settings_particle_weather_auto),
+                            text = stringResource(
+                                id = if (hasRealWeather) {
+                                    R.string.settings_particle_weather_auto_live
+                                } else {
+                                    R.string.settings_particle_weather_auto
+                                }
+                            ),
                             color = if (isSelected) LiquidGlassText else LiquidGlassText.copy(alpha = 0.62f),
                             fontSize = 12.sp
                         )

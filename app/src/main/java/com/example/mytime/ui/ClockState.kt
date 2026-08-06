@@ -2,6 +2,12 @@ package com.example.mytime.ui
 
 import androidx.compose.ui.geometry.Offset
 
+data class HourlyForecast(
+    val time: String,
+    val weather: ParticleWeather,
+    val temperatureCelsius: Double
+)
+
 /**
  * 封装时钟所需的所有状态
  */
@@ -47,7 +53,6 @@ data class ClockState(
     val completedBreaks: Int = 0,
 
     // 提醒与陪伴
-    val hourlyChimeEnabled: Boolean = false,
     val dailyAlarmEnabled: Boolean = false,
     val dailyAlarmHour: Int = 8,
     val dailyAlarmMinute: Int = 0,
@@ -59,6 +64,10 @@ data class ClockState(
     // 主题与环境
     val selectedThemePreset: ThemePreset = ThemePreset.AUTO,
     val activeThemePreset: ThemePreset = ThemePreset.SERENE,
+    val realWeather: ParticleWeather? = null,
+    val temperatureCelsius: Double? = null,
+    val apparentTemperatureCelsius: Double? = null,
+    val hourlyForecast: List<HourlyForecast> = emptyList(),
     val whiteNoiseEnabled: Boolean = false,
     val sleepSoundMode: SleepSoundMode = SleepSoundMode.RAIN,
     val sleepSoundRemainingSeconds: Int = 0,

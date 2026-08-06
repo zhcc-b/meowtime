@@ -16,7 +16,6 @@
     <string name="settings_sleep_sound_auto_off">默认 1 小时后自动关闭。</string>
     <string name="sleep_sound_rain">雨声</string>
     <string name="sleep_sound_white_noise">白噪音</string>
-    <string name="settings_hourly_chime">整点报时</string>
     <string name="settings_daily_alarm">每日闹钟</string>
     <string name="settings_alarm_time">闹钟时间</string>
     <string name="settings_theme_preset">主题预设</string>
@@ -64,7 +63,6 @@
     <string name="companion_stopwatch_ready">正计时已重置，可以开始了。</string>
     <string name="companion_timer_started">计时开始，猫猫正在陪你。</string>
     <string name="companion_timer_paused">计时已暂停，猫猫在等你继续。</string>
-    <string name="reminder_hourly_chime">%1$s 整，做个整点检查。</string>
     <string name="reminder_alarm_now">闹钟时间到了。</string>
     <string name="alarm_enabled_hint">闹钟已开启</string>
     <string name="alarm_snooze_hint">稍后提醒中</string>

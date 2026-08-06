@@ -20,33 +20,43 @@ import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import com.example.mytime.ui.ParticleWeather
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
 
 @Composable
-fun SeamlessParticleLayer(weather: ParticleWeather) {
+fun SeamlessParticleLayer(weather: ParticleWeather, nightMode: Boolean) {
     val particles = remember(weather) { List(weather.particleCount) { WeatherParticle(weather) } }
     val atmosphereBlobs = remember(weather) { List(weather.atmosphereBlobCount) { AtmosphereBlob(weather) } }
     var elapsedMillis by remember { mutableStateOf(0L) }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(weather) {
         val startTime = withFrameNanos { it } / 1_000_000
         while (isActive) {
             withFrameNanos { frameTimeNanos ->
                 elapsedMillis = (frameTimeNanos / 1_000_000) - startTime
             }
+            // The full-screen particle canvas is decorative; 12fps looks fluid enough and
+            // avoids continuous GPU work on devices with aggressive thermal limits.
+            delay(PARTICLE_FRAME_INTERVAL_MS)
         }
     }
 
     Canvas(modifier = Modifier.fillMaxSize()) {
         val seconds = elapsedMillis / 1000f
-        drawWeatherBackdrop(weather = weather, seconds = seconds)
+        // Night has its own low-luminance artwork beneath this canvas.  Do not cover it
+        // with the day-oriented, opaque weather gradient; retain only moving effects.
+        if (!nightMode) {
+            drawWeatherBackdrop(weather = weather, seconds = seconds)
+        }
         drawAtmosphereBlobs(weather = weather, seconds = seconds, blobs = atmosphereBlobs)
         drawFogVeils(weather = weather, seconds = seconds)
         drawWeatherParticles(weather = weather, seconds = seconds, particles = particles)
     }
 }
+
+private const val PARTICLE_FRAME_INTERVAL_MS = 83L
 
 private data class WeatherPalette(
     val skyTop: Color,

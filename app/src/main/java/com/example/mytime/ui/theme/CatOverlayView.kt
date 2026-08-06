@@ -25,7 +25,6 @@ internal class CatOverlayView(context: Context) : FrameLayout(context) {
     private var isEnabledCats = true
     private var receiverRegistered = false
     private var loopRunning = false
-    private var lastRenderNs = 0L
     private var renderSurface: Surface? = null
 
     private val walkRunnables: List<Runnable> = List(1) { catIndex ->
@@ -38,12 +37,12 @@ internal class CatOverlayView(context: Context) : FrameLayout(context) {
     private val frameCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
             if (!isAttached || !isEnabledCats || !loopRunning) return
-            val intervalNs = renderer.targetFrameIntervalNs.get()
-            if (frameTimeNanos - lastRenderNs >= intervalNs) {
-                renderer.render(frameTimeNanos)
-                lastRenderNs = frameTimeNanos
-            }
-            Choreographer.getInstance().postFrameCallback(this)
+            renderer.render(frameTimeNanos)
+            // Do not wake for every display vsync.  On older devices this overlay otherwise
+            // keeps the CPU/GPU busy even while the cats are resting.
+            val delayMs = (renderer.targetFrameIntervalNs.get() / 1_000_000L)
+                .coerceAtLeast(MIN_FRAME_DELAY_MS)
+            Choreographer.getInstance().postFrameCallbackDelayed(this, delayMs)
         }
     }
 
@@ -131,7 +130,6 @@ internal class CatOverlayView(context: Context) : FrameLayout(context) {
     private fun startLoop() {
         if (loopRunning) return
         loopRunning = true
-        lastRenderNs = 0L
         if (textureView.isAvailable && renderSurface == null) {
             val surfaceTexture = textureView.surfaceTexture
             if (surfaceTexture != null) {
@@ -193,6 +191,10 @@ internal class CatOverlayView(context: Context) : FrameLayout(context) {
         runCatching { context.unregisterReceiver(clockReceiver) }
         receiverRegistered = false
     }
+
+    private companion object {
+        const val MIN_FRAME_DELAY_MS = 16L
+    }
 }
 
 private class AccessibleTextureView(context: Context) : TextureView(context) {
@@ -201,4 +203,3 @@ private class AccessibleTextureView(context: Context) : TextureView(context) {
         return true
     }
 }
-

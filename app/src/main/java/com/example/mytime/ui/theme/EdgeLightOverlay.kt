@@ -1,15 +1,13 @@
 package com.example.mytime.ui.theme
 
-import androidx.compose.animation.core.EaseInOutSine
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -19,6 +17,35 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import com.example.mytime.ui.EdgeLightMode
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlin.math.PI
+import kotlin.math.sin
+
+private const val EDGE_LIGHT_FRAME_INTERVAL_MS = 83L
+
+@Composable
+private fun rememberEdgeAnimationMillis(mode: EdgeLightMode): Long {
+    var elapsedMillis by remember(mode) { mutableStateOf(0L) }
+    LaunchedEffect(mode) {
+        val startTimeNs = withFrameNanos { it }
+        while (isActive) {
+            withFrameNanos { frameTimeNs ->
+                elapsedMillis = (frameTimeNs - startTimeNs) / 1_000_000L
+            }
+            delay(EDGE_LIGHT_FRAME_INTERVAL_MS)
+        }
+    }
+    return elapsedMillis
+}
+
+private fun Long.phase(periodMillis: Long): Float =
+    (this % periodMillis).toFloat() / periodMillis.toFloat()
+
+private fun Long.wave(periodMillis: Long): Float {
+    val angle = phase(periodMillis) * (2.0 * PI) - PI / 2.0
+    return ((sin(angle) + 1.0) / 2.0).toFloat()
+}
 
 @Composable
 internal fun EdgeLightOverlay(
@@ -27,55 +54,30 @@ internal fun EdgeLightOverlay(
 ) {
     if (mode == null) return
 
-    val transition = rememberInfiniteTransition(label = "edge_light")
-    val colorShift by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = when (mode) {
-                    EdgeLightMode.BREAK_REMINDER -> 3600
-                    EdgeLightMode.TIMER_ALERT -> 2400
-                    EdgeLightMode.STOPWATCH_ACTIVE -> 5400
-                    EdgeLightMode.AMBIENT_FOCUS -> 7200
-                    EdgeLightMode.AMBIENT_PLAYFUL -> 5600
-                    EdgeLightMode.AMBIENT_SERENE -> 10000
-                    EdgeLightMode.AMBIENT_NIGHT -> 16000
-                },
-                easing = LinearEasing
-            )
-        ),
-        label = "edge_color_shift"
+    val elapsedMillis = rememberEdgeAnimationMillis(mode)
+    val colorShift = elapsedMillis.phase(
+        when (mode) {
+            EdgeLightMode.BREAK_REMINDER -> 3600L
+            EdgeLightMode.TIMER_ALERT -> 2400L
+            EdgeLightMode.STOPWATCH_ACTIVE -> 5400L
+            EdgeLightMode.AMBIENT_FOCUS -> 7200L
+            EdgeLightMode.AMBIENT_PLAYFUL -> 5600L
+            EdgeLightMode.AMBIENT_SERENE -> 10000L
+            EdgeLightMode.AMBIENT_NIGHT -> 16000L
+        }
     )
-    val pulse by transition.animateFloat(
-        initialValue = 0.88f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = when (mode) {
-                    EdgeLightMode.BREAK_REMINDER -> 1000
-                    EdgeLightMode.TIMER_ALERT -> 760
-                    EdgeLightMode.STOPWATCH_ACTIVE -> 1600
-                    EdgeLightMode.AMBIENT_FOCUS -> 2600
-                    EdgeLightMode.AMBIENT_PLAYFUL -> 1800
-                    EdgeLightMode.AMBIENT_SERENE -> 3200
-                    EdgeLightMode.AMBIENT_NIGHT -> 4800
-                },
-                easing = EaseInOutSine
-            ),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "edge_pulse"
+    val pulse = 0.88f + 0.12f * elapsedMillis.wave(
+        when (mode) {
+            EdgeLightMode.BREAK_REMINDER -> 1000L
+            EdgeLightMode.TIMER_ALERT -> 760L
+            EdgeLightMode.STOPWATCH_ACTIVE -> 1600L
+            EdgeLightMode.AMBIENT_FOCUS -> 2600L
+            EdgeLightMode.AMBIENT_PLAYFUL -> 1800L
+            EdgeLightMode.AMBIENT_SERENE -> 3200L
+            EdgeLightMode.AMBIENT_NIGHT -> 4800L
+        }
     )
-    val alertFlash by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 430, easing = EaseInOutSine),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "edge_alert_flash"
-    )
+    val alertFlash = elapsedMillis.wave(860L)
 
     val overlayAlpha = when (mode) {
         EdgeLightMode.BREAK_REMINDER -> 0.94f

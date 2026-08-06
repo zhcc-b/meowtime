@@ -31,6 +31,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.mytime.ui.ClockViewModel
 import com.example.mytime.ui.ClockMode
+import com.example.mytime.ui.DiagnosticLogger
 import com.example.mytime.ui.ParticleWeather
 import com.example.mytime.ui.SleepSoundMode
 import com.example.mytime.ui.ThemePreset
@@ -60,6 +61,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        DiagnosticLogger.installCrashHandler(applicationContext)
+        DiagnosticLogger.log("LIFECYCLE", "MainActivity onCreate")
 
         // 1. 设置全屏沉浸式
         applyImmersiveMode()
@@ -156,7 +159,6 @@ class MainActivity : ComponentActivity() {
                         onSetPomodoroFocus = { viewModel.setPomodoroFocusMinutes(it) },
                         onSetPomodoroBreak = { viewModel.setPomodoroBreakMinutes(it) },
                         onSetCountdown = { viewModel.setCountdownDurationMinutes(it) },
-                        onToggleHourlyChime = { viewModel.toggleHourlyChime(it) },
                         onToggleDailyAlarm = { viewModel.toggleDailyAlarm(it) },
                         onSetDailyAlarmHour = { viewModel.setDailyAlarmHour(it) },
                         onSetDailyAlarmMinute = { viewModel.setDailyAlarmMinute(it) },
@@ -175,15 +177,18 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        DiagnosticLogger.log("LIFECYCLE", "MainActivity onResume")
         window.decorView.post { applyImmersiveMode() }
     }
 
     override fun onStart() {
         super.onStart()
+        DiagnosticLogger.log("LIFECYCLE", "MainActivity onStart")
         viewModel.setAppActive(true)
     }
 
     override fun onStop() {
+        DiagnosticLogger.log("LIFECYCLE", "MainActivity onStop")
         viewModel.setAppActive(false)
         super.onStop()
     }

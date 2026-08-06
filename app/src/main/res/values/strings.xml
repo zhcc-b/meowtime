@@ -5,6 +5,7 @@
     <string name="settings_gyroscope">Gyroscope 3D</string>
     <string name="settings_particle_weather">Particle Weather</string>
     <string name="settings_particle_weather_auto">Auto (Random every 8h)</string>
+    <string name="settings_particle_weather_auto_live">Auto · Live</string>
     <string name="settings_cats">Realtime Cats</string>
     <string name="settings_24_hour">24-Hour Format</string>
     <string name="settings_white_noise">Sleep Sound</string>
@@ -16,7 +17,6 @@
     <string name="settings_sleep_sound_auto_off">Automatically stops after 1 hour.</string>
     <string name="sleep_sound_rain">Rain</string>
     <string name="sleep_sound_white_noise">White Noise</string>
-    <string name="settings_hourly_chime">Hourly Chime</string>
     <string name="settings_daily_alarm">Daily Alarm</string>
     <string name="settings_alarm_time">Alarm Time</string>
     <string name="settings_theme_preset">Theme Preset</string>
@@ -64,7 +64,6 @@
     <string name="companion_stopwatch_ready">Stopwatch is reset and ready.</string>
     <string name="companion_timer_started">Timer started. Cat is on duty.</string>
     <string name="companion_timer_paused">Timer paused. Cat is waiting.</string>
-    <string name="reminder_hourly_chime">%1$s o’clock check-in.</string>
     <string name="reminder_alarm_now">Alarm time.</string>
     <string name="alarm_enabled_hint">Alarm on</string>
     <string name="alarm_snooze_hint">Snoozing</string>

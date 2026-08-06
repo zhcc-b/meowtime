@@ -62,6 +62,7 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.google.material)
     implementation(libs.coil.compose)
+    implementation("com.google.android.gms:play-services-location:21.3.0")
     implementation(libs.filament.android)
     implementation(libs.filament.gltfio.android)
     implementation(libs.filament.utils.android)

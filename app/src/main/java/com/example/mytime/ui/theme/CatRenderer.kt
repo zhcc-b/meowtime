@@ -37,8 +37,8 @@ import kotlin.random.Random
 
 internal class CatRenderer(private val context: Context) {
     private val lock = Any()
-    // Default to ~20fps to reduce battery use; adaptive logic can raise/lower it.
-    val targetFrameIntervalNs = AtomicLong(50_000_000L)
+    // Keep the idle scene cheap on older phones; active cat actions still render at ~12fps.
+    val targetFrameIntervalNs = AtomicLong(100_000_000L)
 
     private var engine: Engine? = null
     private var renderer: Renderer? = null
@@ -294,7 +294,9 @@ internal class CatRenderer(private val context: Context) {
 
         val nowNs = if (frameTimeNanos > 0L) frameTimeNanos else System.nanoTime()
         if (lastFrameNs == 0L) lastFrameNs = nowNs
-        val dtSec = ((nowNs - lastFrameNs) / 1_000_000_000f).coerceIn(0.001f, 0.05f)
+        // The renderer intentionally runs below display refresh rate while idle.  Preserve
+        // real elapsed time for behavior/animation updates, while capping long resume gaps.
+        val dtSec = ((nowNs - lastFrameNs) / 1_000_000_000f).coerceIn(0.001f, 0.25f)
         lastFrameNs = nowNs
 
         synchronized(lock) {
@@ -553,7 +555,7 @@ internal class CatRenderer(private val context: Context) {
             applyTransform(cat)
         }
 
-        // Adaptive framerate: ~24fps active, ~15fps light idle, 10fps deep idle/doze.
+        // Adaptive framerate: ~12fps active, ~6fps light idle, 4fps deep idle/doze.
         val anyActive = cats.any { it.state == CatState.WALKING || it.state == CatState.REACTING }
         val allDeepIdle = cats.isNotEmpty() && cats.all {
             (it.state == CatState.IDLE && it.idleDurationSec > 8f) ||
@@ -562,9 +564,9 @@ internal class CatRenderer(private val context: Context) {
         }
         targetFrameIntervalNs.set(
             when {
-                anyActive   -> 41_666_666L
-                allDeepIdle -> 100_000_000L
-                else        -> 66_666_666L
+                anyActive   -> 83_333_333L
+                allDeepIdle -> 250_000_000L
+                else        -> 166_666_666L
             }
         )
     }
