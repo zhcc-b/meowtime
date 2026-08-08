@@ -124,8 +124,15 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         override fun onReceive(context: Context?, intent: Intent?) {
             val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
             val scale = intent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
-            if (level >= 0 && scale > 0) {
-                _uiState.update { it.copy(batteryLevel = "${(level * 100 / scale)}%") }
+            val status = intent?.getIntExtra(BatteryManager.EXTRA_STATUS, BatteryManager.BATTERY_STATUS_UNKNOWN)
+                ?: BatteryManager.BATTERY_STATUS_UNKNOWN
+            val charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                status == BatteryManager.BATTERY_STATUS_FULL
+            _uiState.update { state ->
+                state.copy(
+                    batteryLevel = if (level >= 0 && scale > 0) "${(level * 100 / scale)}%" else state.batteryLevel,
+                    isCharging = charging
+                )
             }
         }
     }
@@ -247,9 +254,13 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         amPm = timeTick.amPm,
                         date = timeTick.date,
                         dayOfWeek = timeTick.dayOfWeek,
-                        // The night wallpaper keeps the clock legible while real weather
-                        // particles remain visible as a subtle foreground layer.
-                        backgroundRes = if (timeTick.isNightQuietHours) R.drawable.night_sky else R.drawable.jiguang,
+                        // The wallpaper belongs to the active theme. AUTO resolves to NIGHT
+                        // during night hours, while manually chosen themes remain unchanged.
+                        backgroundRes = if (workingState.activeThemePreset == ThemePreset.NIGHT) {
+                            R.drawable.night_sky
+                        } else {
+                            R.drawable.jiguang
+                        },
                         particleWeather = if (workingState.isParticleWeatherAuto) activeWeather else workingState.particleWeather,
                         burnInOffset = burnInOffset,
                         dailyAlarmSnoozeRemainingSeconds = alarmTick.snoozeRemainingSeconds,

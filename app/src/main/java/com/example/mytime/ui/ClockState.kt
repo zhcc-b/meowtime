@@ -20,6 +20,7 @@ data class ClockState(
     val date: String = "--",
     val dayOfWeek: String = "--",
     val batteryLevel: String = "--",
+    val isCharging: Boolean = false,
     val location: String = "--",
     val backgroundRes: Int? = null,
     

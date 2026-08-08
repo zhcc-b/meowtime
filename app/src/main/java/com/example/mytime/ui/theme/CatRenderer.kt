@@ -37,7 +37,7 @@ import kotlin.random.Random
 
 internal class CatRenderer(private val context: Context) {
     private val lock = Any()
-    // Keep the idle scene cheap on older phones; active cat actions still render at ~12fps.
+    // Keep the idle scene cheap on older phones; active cat actions render at ~23fps.
     val targetFrameIntervalNs = AtomicLong(100_000_000L)
 
     private var engine: Engine? = null
@@ -555,7 +555,7 @@ internal class CatRenderer(private val context: Context) {
             applyTransform(cat)
         }
 
-        // Adaptive framerate: ~12fps active, ~6fps light idle, 4fps deep idle/doze.
+        // Adaptive framerate: ~23fps active, ~6fps light idle, 4fps deep idle/doze.
         val anyActive = cats.any { it.state == CatState.WALKING || it.state == CatState.REACTING }
         val allDeepIdle = cats.isNotEmpty() && cats.all {
             (it.state == CatState.IDLE && it.idleDurationSec > 8f) ||
@@ -564,7 +564,7 @@ internal class CatRenderer(private val context: Context) {
         }
         targetFrameIntervalNs.set(
             when {
-                anyActive   -> 83_333_333L
+                anyActive   -> 43_500_000L
                 allDeepIdle -> 250_000_000L
                 else        -> 166_666_666L
             }

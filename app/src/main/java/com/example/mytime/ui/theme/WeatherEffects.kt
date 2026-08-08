@@ -37,8 +37,8 @@ fun SeamlessParticleLayer(weather: ParticleWeather, nightMode: Boolean) {
             withFrameNanos { frameTimeNanos ->
                 elapsedMillis = (frameTimeNanos / 1_000_000) - startTime
             }
-            // The full-screen particle canvas is decorative; 12fps looks fluid enough and
-            // avoids continuous GPU work on devices with aggressive thermal limits.
+            // Weather is a prominent full-screen effect. 30fps keeps it smooth while
+            // remaining below display refresh rate on older devices.
             delay(PARTICLE_FRAME_INTERVAL_MS)
         }
     }
@@ -56,7 +56,7 @@ fun SeamlessParticleLayer(weather: ParticleWeather, nightMode: Boolean) {
     }
 }
 
-private const val PARTICLE_FRAME_INTERVAL_MS = 83L
+private const val PARTICLE_FRAME_INTERVAL_MS = 33L
 
 private data class WeatherPalette(
     val skyTop: Color,
@@ -169,7 +169,9 @@ private fun WeatherParticle(weather: ParticleWeather): WeatherParticle {
         ParticleWeather.RAIN -> WeatherParticle(
             startX = Random.nextFloat(),
             startY = Random.nextFloat(),
-            speed = 0.55f + Random.nextFloat() * 0.55f,
+            // Vertical travel is normalized against the full pixel height.  Keep the
+            // per-frame travel modest at 30fps so rain remains continuous on 2K screens.
+            speed = 0.20f + Random.nextFloat() * 0.18f,
             size = 1.8f + Random.nextFloat() * 2.1f,
             alpha = 0.15f + Random.nextFloat() * 0.35f,
             length = 20f + Random.nextFloat() * 18f,
@@ -180,7 +182,7 @@ private fun WeatherParticle(weather: ParticleWeather): WeatherParticle {
         ParticleWeather.DRIZZLE -> WeatherParticle(
             startX = Random.nextFloat(),
             startY = Random.nextFloat(),
-            speed = 0.35f + Random.nextFloat() * 0.35f,
+            speed = 0.14f + Random.nextFloat() * 0.14f,
             size = 1.2f + Random.nextFloat() * 1.4f,
             alpha = 0.1f + Random.nextFloat() * 0.2f,
             length = 14f + Random.nextFloat() * 12f,
@@ -191,7 +193,7 @@ private fun WeatherParticle(weather: ParticleWeather): WeatherParticle {
         ParticleWeather.SNOW -> WeatherParticle(
             startX = Random.nextFloat(),
             startY = Random.nextFloat(),
-            speed = 0.018f + Random.nextFloat() * 0.045f,
+            speed = 0.012f + Random.nextFloat() * 0.028f,
             size = 2.4f + Random.nextFloat() * 4.4f,
             alpha = 0.18f + Random.nextFloat() * 0.45f,
             length = 0f,
@@ -202,7 +204,7 @@ private fun WeatherParticle(weather: ParticleWeather): WeatherParticle {
         ParticleWeather.BLIZZARD -> WeatherParticle(
             startX = Random.nextFloat(),
             startY = Random.nextFloat(),
-            speed = 0.10f + Random.nextFloat() * 0.14f,
+            speed = 0.05f + Random.nextFloat() * 0.07f,
             size = 2.0f + Random.nextFloat() * 3.6f,
             alpha = 0.16f + Random.nextFloat() * 0.32f,
             length = 0f,
@@ -213,7 +215,7 @@ private fun WeatherParticle(weather: ParticleWeather): WeatherParticle {
         ParticleWeather.HAIL -> WeatherParticle(
             startX = Random.nextFloat(),
             startY = Random.nextFloat(),
-            speed = 0.65f + Random.nextFloat() * 0.85f,
+            speed = 0.20f + Random.nextFloat() * 0.16f,
             size = 2.4f + Random.nextFloat() * 3.8f,
             alpha = 0.2f + Random.nextFloat() * 0.5f,
             length = 0f,
@@ -240,11 +242,11 @@ private val ParticleWeather.particleCount: Int
         ParticleWeather.SUNNY -> 18
         ParticleWeather.CLOUDY -> 24
         ParticleWeather.FOG -> 30
-        ParticleWeather.RAIN -> 120
-        ParticleWeather.DRIZZLE -> 100
-        ParticleWeather.SNOW -> 80
-        ParticleWeather.BLIZZARD -> 130
-        ParticleWeather.HAIL -> 110
+        ParticleWeather.RAIN -> 88
+        ParticleWeather.DRIZZLE -> 72
+        ParticleWeather.SNOW -> 60
+        ParticleWeather.BLIZZARD -> 88
+        ParticleWeather.HAIL -> 76
         ParticleWeather.WIND -> 90
     }
 

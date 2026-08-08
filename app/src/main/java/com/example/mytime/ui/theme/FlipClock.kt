@@ -33,10 +33,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
@@ -114,7 +116,9 @@ fun FlipClockScreen(
     val playfulPresetInfo = stringResource(id = R.string.theme_info_playful)
     val serenePresetInfo = stringResource(id = R.string.theme_info_serene)
     val nightPresetInfo = stringResource(id = R.string.theme_info_night)
-    val isNightQuietHours = state.currentHour24 >= 23 || state.currentHour24 < 7
+    // Night-specific artwork and dimmed effects are a property of the Night theme,
+    // not of the current clock hour. AUTO selects this theme at night by itself.
+    val isNightTheme = state.activeThemePreset == ThemePreset.NIGHT
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 1. 背景层
@@ -132,7 +136,7 @@ fun FlipClockScreen(
                     (-safeParallax.y * 0.3f).roundToInt()
                 )
             }
-            .alpha(if (state.isSettingsVisible) 0.24f else if (isNightQuietHours) 0.9f else 0.6f)
+            .alpha(if (state.isSettingsVisible) 0.24f else if (isNightTheme) 0.9f else 0.6f)
 
         state.backgroundRes?.let { resId ->
             Image(
@@ -141,7 +145,7 @@ fun FlipClockScreen(
                 contentScale = ContentScale.Crop,
                 modifier = backgroundModifier,
                 colorFilter = ColorFilter.tint(
-                    Color.Black.copy(alpha = if (isNightQuietHours) 0.18f else 0.5f),
+                    Color.Black.copy(alpha = if (isNightTheme) 0.18f else 0.5f),
                     BlendMode.Multiply
                 )
             )
@@ -149,10 +153,10 @@ fun FlipClockScreen(
 
         Box(
             modifier = Modifier.alpha(
-                if (state.isSettingsVisible) 0.22f else if (isNightQuietHours) 0.55f else 1f
+                if (state.isSettingsVisible) 0.22f else if (isNightTheme) 0.55f else 1f
             )
         ) {
-            SeamlessParticleLayer(weather = state.particleWeather, nightMode = isNightQuietHours)
+            SeamlessParticleLayer(weather = state.particleWeather, nightMode = isNightTheme)
         }
 
         FilamentCatOverlay(
@@ -569,6 +573,7 @@ private fun SettingsGearButton(
 @Composable
 private fun StatusControlCard(
     batteryLevel: String,
+    isCharging: Boolean,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
     compact: Boolean = false
@@ -589,6 +594,7 @@ private fun StatusControlCard(
         ) {
             BatteryIndicator(
                 batteryLevel = batteryLevel,
+                isCharging = isCharging,
                 compact = compact
             )
             SettingsGearButton(onClick = onOpenSettings)
@@ -599,6 +605,7 @@ private fun StatusControlCard(
 @Composable
 private fun BatteryIndicator(
     batteryLevel: String,
+    isCharging: Boolean,
     modifier: Modifier = Modifier,
     compact: Boolean = false
 ) {
@@ -606,32 +613,47 @@ private fun BatteryIndicator(
         batteryLevel.filter { it.isDigit() }.toIntOrNull()
     } ?: return
     val isLow = percent < 30
-    val accent = if (isLow) Color(0xFFFFC28C) else LiquidGlassText
+    val accent = when {
+        isCharging -> Color(0xFF77F4E5)
+        isLow -> Color(0xFFFFC28C)
+        else -> LiquidGlassText
+    }
+    var chargePhase by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(isCharging) {
+        if (!isCharging) {
+            chargePhase = 0f
+            return@LaunchedEffect
+        }
+        while (true) {
+            chargePhase = (chargePhase + 0.05f) % 1f
+            // The decorative charge flow updates at 12fps to stay within the app's
+            // performance budget on older devices.
+            kotlinx.coroutines.delay(83L)
+        }
+    }
 
-    Row(
+    val batteryWidth = if (compact) 38.dp else 42.dp
+    val batteryHeight = if (compact) 16.dp else 18.dp
+    val capTextInset = if (compact) 3.dp else 3.5.dp
+
+    Box(
         modifier = modifier
             .padding(
                 horizontal = if (compact) 2.dp else 3.dp,
                 vertical = if (compact) 3.dp else 4.dp
-            ),
-        horizontalArrangement = Arrangement.spacedBy(if (compact) 7.dp else 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+            )
+            .width(batteryWidth)
+            .height(batteryHeight)
     ) {
-        Text(
-            text = "$percent%",
-            color = accent.copy(alpha = if (isLow) 0.94f else 0.72f),
-            fontSize = if (compact) 12.sp else 13.sp,
-            fontFamily = UiFontFamily,
-            fontWeight = if (isLow) FontWeight.SemiBold else FontWeight.Medium
-        )
         Canvas(
-            modifier = Modifier
-                .width(if (compact) 19.dp else 21.dp)
-                .height(if (compact) 10.dp else 11.dp)
+            modifier = Modifier.fillMaxSize()
         ) {
             val stroke = 1.25.dp.toPx()
             val capWidth = 2.dp.toPx()
             val bodyWidth = size.width - capWidth - stroke
+            val fillLeft = stroke * 1.5f
+            val fillTop = stroke * 1.5f
+            val fillHeight = size.height - stroke * 3f
             val fillWidth = (bodyWidth - stroke * 3f) * (percent / 100f).coerceIn(0f, 1f)
             drawRoundRect(
                 color = accent.copy(alpha = if (isLow) 0.68f else 0.40f),
@@ -640,17 +662,75 @@ private fun BatteryIndicator(
                 cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx()),
                 style = Stroke(width = stroke)
             )
-            drawRoundRect(
-                color = accent.copy(alpha = if (isLow) 0.86f else 0.52f),
-                topLeft = Offset(stroke * 1.5f, stroke * 1.5f),
-                size = Size(fillWidth.coerceAtLeast(0f), size.height - stroke * 3f),
-                cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
-            )
+            if (isCharging) {
+                clipRect(
+                    left = fillLeft,
+                    top = fillTop,
+                    right = fillLeft + fillWidth,
+                    bottom = fillTop + fillHeight
+                ) {
+                    drawRoundRect(
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(
+                                Color(0xFF47D7FF).copy(alpha = 0.82f),
+                                Color(0xFF8DFFCF).copy(alpha = 0.96f),
+                                Color(0xFFBE8CFF).copy(alpha = 0.82f)
+                            ),
+                            startX = fillLeft + (chargePhase - 1f) * fillWidth,
+                            endX = fillLeft + chargePhase * fillWidth
+                        ),
+                        topLeft = Offset(fillLeft, fillTop),
+                        size = Size(fillWidth.coerceAtLeast(0f), fillHeight),
+                        cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
+                    )
+                    val streakWidth = 3.dp.toPx()
+                    drawRoundRect(
+                        color = Color.White.copy(alpha = 0.54f),
+                        topLeft = Offset(fillLeft + chargePhase * fillWidth - streakWidth, fillTop),
+                        size = Size(streakWidth, fillHeight),
+                        cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
+                    )
+                }
+            } else {
+                drawRoundRect(
+                    color = accent.copy(alpha = if (isLow) 0.86f else 0.52f),
+                    topLeft = Offset(fillLeft, fillTop),
+                    size = Size(fillWidth.coerceAtLeast(0f), fillHeight),
+                    cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
+                )
+            }
             drawRoundRect(
                 color = accent.copy(alpha = if (isLow) 0.68f else 0.36f),
                 topLeft = Offset(bodyWidth + stroke, size.height * 0.30f),
                 size = Size(capWidth, size.height * 0.40f),
                 cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
+            )
+        }
+        // The terminal cap is outside this box, so this centers the number in the
+        // visible battery body rather than in the whole battery-and-cap silhouette.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(end = capTextInset),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = percent.toString(),
+                // Match the iOS status-bar principle: an unambiguous, high-contrast
+                // number inside the symbol, independent of the coloured fill below.
+                color = Color.White,
+                fontSize = if (compact) 11.sp else 12.sp,
+                fontFamily = FontFamily.SansSerif,
+                fontWeight = FontWeight.Bold,
+                style = TextStyle(
+                    shadow = Shadow(
+                        color = Color.Black.copy(alpha = 0.9f),
+                        offset = Offset.Zero,
+                        blurRadius = 2f
+                    )
+                ),
+                modifier = Modifier.offset(y = (-1).dp),
+                maxLines = 1
             )
         }
     }
@@ -806,6 +886,7 @@ private fun PortraitClockContent(
             )
             StatusControlCard(
                 batteryLevel = state.batteryLevel,
+                isCharging = state.isCharging,
                 onOpenSettings = onToggleSettings,
                 compact = true
             )
@@ -858,15 +939,6 @@ private fun PortraitClockContent(
                     .padding(horizontal = if (isCompactPortrait) 10.dp else 16.dp)
             )
         }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        PomodoroInfoCard(
-            state = state,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = if (isCompactPortrait) 10.dp else 16.dp)
-        )
 
         if (state.clockMode != ClockMode.CLOCK) {
             Spacer(modifier = Modifier.height(10.dp))
@@ -943,9 +1015,10 @@ private fun DateDayBlock(state: ClockState, footerFontSize: TextUnit, modifier: 
             state.temperatureLabel()?.let { temperature ->
                 Text(
                     text = temperature,
-                    color = LiquidGlassText.copy(alpha = 0.58f),
-                    fontSize = (footerFontSize.value * 0.68f).sp,
+                    color = LiquidGlassText.copy(alpha = 0.9f),
+                    fontSize = (footerFontSize.value * 0.88f).sp,
                     fontFamily = UiFontFamily,
+                    fontWeight = FontWeight.Medium,
                     maxLines = 1
                 )
             }
@@ -973,9 +1046,10 @@ private fun LandscapeDateLocationBlock(state: ClockState, modifier: Modifier = M
                 state.temperatureLabel()?.let { temperature ->
                     Text(
                         text = temperature,
-                        color = LiquidGlassText.copy(alpha = 0.68f),
-                        fontSize = 14.sp,
+                        color = LiquidGlassText.copy(alpha = 0.94f),
+                        fontSize = 17.sp,
                         fontFamily = UiFontFamily,
+                        fontWeight = FontWeight.SemiBold,
                         maxLines = 1
                     )
                 }
@@ -1155,6 +1229,7 @@ private fun LandscapeClockContent(
     ) {
         StatusControlCard(
             batteryLevel = state.batteryLevel,
+            isCharging = state.isCharging,
             onOpenSettings = onToggleSettings,
             modifier = Modifier
                 .align(Alignment.TopEnd)
@@ -1192,7 +1267,7 @@ private fun LandscapeClockContent(
                     .align(Alignment.BottomEnd)
                     // The daily alarm card occupies the lower-right corner. Keep the
                     // forecast on the same baseline and slide it left to avoid overlap.
-                    .padding(end = if (state.dailyAlarmEnabled) 124.dp else 18.dp, bottom = 18.dp)
+                    .padding(end = if (state.dailyAlarmEnabled) 124.dp else 8.dp, bottom = 18.dp)
             )
         }
 
@@ -1250,7 +1325,9 @@ private fun HourlyForecastCard(
             state.hourlyForecast.take(2).forEach { forecast ->
                 Text(
                     text = "${forecast.time}  ${forecast.weather.forecastLabel()} · ${forecast.temperatureCelsius.roundToInt()}°C",
-                    color = LiquidGlassText.copy(alpha = 0.76f),
+                    // More readable than the original forecast, while remaining below
+                    // the 0.94 opacity used for the primary live temperature.
+                    color = LiquidGlassText.copy(alpha = 0.84f),
                     fontSize = 13.sp,
                     fontFamily = UiFontFamily,
                     maxLines = 1
