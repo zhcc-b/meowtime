@@ -121,7 +121,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private var sleepSoundEndsAtElapsedMs: Long = 0L
     private var sensorRegistered = false
     private var isAppActive = false
-    private var lastDailyAlarmMarker = ""
 
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -243,22 +242,29 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                     realWeather = currentState.realWeather
                 )
 
-                var sideEffects = ClockTickerSideEffects()
-                _uiState.update { state ->
-                    var workingState = advanceThemeTick(state, resolvedPreset)
+                val elapsedNow = SystemClock.elapsedRealtime()
+                val snoozeRemaining = dailyAlarmSnoozeDeadlineElapsedMs?.let {
+                    ((it - elapsedNow + 999L) / 1000L).coerceAtLeast(0L).toInt()
+                } ?: 0
+                val nextOffset = Offset(random.nextFloat() * 20f - 10f, random.nextFloat() * 20f - 10f)
+                val nextFont = AvailableClockFonts.random()
+                val sideEffects = _uiState.updateAndGetEffect { state ->
+                    var effects = ClockTickerSideEffects()
+                    var workingState = advanceThemeTick(state, resolvedPreset, nextFont)
 
                     val modeTick = advanceModeTick(workingState)
                     workingState = modeTick.state
-                    sideEffects = sideEffects.withModeTick(modeTick)
+                    effects = effects.withModeTick(modeTick)
 
-                    val burnInOffset = advanceBurnInOffset(workingState, timeTick.minute, lastMinute)
+                    val burnInOffset = if (timeTick.minute != lastMinute) nextOffset else workingState.burnInOffset
                     val alarmTick = advanceAlarmTick(
                         state = workingState,
                         timeTick = timeTick,
-                        companionMessage = modeTick.message ?: workingState.companionMessage
+                        companionMessage = modeTick.message ?: workingState.companionMessage,
+                        snoozeRemainingSeconds = snoozeRemaining
                     )
                     workingState = alarmTick.state
-                    sideEffects = sideEffects.withAlarmTick(alarmTick)
+                    effects = effects.withAlarmTick(alarmTick)
 
                     workingState.copy(
                         hour = timeTick.displayHour,
@@ -279,7 +285,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         burnInOffset = burnInOffset,
                         dailyAlarmSnoozeRemainingSeconds = alarmTick.snoozeRemainingSeconds,
                         companionMessage = alarmTick.companionMessage
-                    )
+                    ) to effects
                 }
 
                 runTickerSideEffects(sideEffects)
@@ -418,7 +424,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         return activeWeather
     }
 
-    private fun advanceThemeTick(state: ClockState, resolvedPreset: ThemePreset): ClockState {
+    private fun advanceThemeTick(state: ClockState, resolvedPreset: ThemePreset, nextFont: ClockFont): ClockState {
         if (state.activeThemePreset == resolvedPreset) return state
         // In AUTO mode the preset switches automatically on a schedule;
         // take the opportunity to also randomly pick a fresh font.
@@ -426,40 +432,23 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         return applyThemePresetProfile(
             state = state.copy(activeThemePreset = resolvedPreset),
             preset = resolvedPreset,
-            randomizeFont = isAutoMode
-        )
+            randomizeFont = false
+        ).let { if (isAutoMode) it.copy(selectedFont = nextFont) else it }
     }
 
     private fun advanceModeTick(state: ClockState): ModeTickResult {
         return advanceModeState(state)
     }
 
-    private fun advanceBurnInOffset(state: ClockState, currentMinute: Int, lastMinute: Int): Offset {
-        return if (currentMinute != lastMinute) {
-            Offset(
-                x = random.nextFloat() * 20f - 10f,
-                y = random.nextFloat() * 20f - 10f
-            )
-        } else {
-            state.burnInOffset
-        }
-    }
-
     private fun advanceAlarmTick(
         state: ClockState,
         timeTick: TimeTick,
-        companionMessage: String
+        companionMessage: String,
+        snoozeRemainingSeconds: Int
     ): AlarmTickResult {
         val dailyMarker = "${timeTick.date}-${state.dailyAlarmHour}-${state.dailyAlarmMinute}"
         var nextMessage = companionMessage
         var shouldStartDailyAlarm = false
-        val snoozeRemainingSeconds = dailyAlarmSnoozeDeadlineElapsedMs
-            ?.let { deadline ->
-                (((deadline - SystemClock.elapsedRealtime()) + 999L) / 1000L)
-                    .coerceAtLeast(0L)
-                    .toInt()
-            }
-            ?: 0
 
         if (
             ClockStateReducers.shouldTriggerDailyAlarm(
@@ -468,16 +457,15 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                 minute = timeTick.minute,
                 second = timeTick.second,
                 dailyMarker = dailyMarker,
-                lastDailyAlarmMarker = lastDailyAlarmMarker
+                lastDailyAlarmMarker = state.lastDailyAlarmMarker
             )
         ) {
-            lastDailyAlarmMarker = dailyMarker
             shouldStartDailyAlarm = true
             nextMessage = appContext.getString(R.string.reminder_alarm_now)
         }
 
         return AlarmTickResult(
-            state = state,
+            state = if (shouldStartDailyAlarm) state.copy(lastDailyAlarmMarker = dailyMarker) else state,
             snoozeRemainingSeconds = snoozeRemainingSeconds,
             companionMessage = nextMessage,
             shouldStartDailyAlarm = shouldStartDailyAlarm

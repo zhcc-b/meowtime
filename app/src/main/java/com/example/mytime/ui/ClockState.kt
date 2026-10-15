@@ -56,6 +56,7 @@ data class ClockState(
     val completedBreaks: Int = 0,
 
     // 提醒与陪伴
+    val lastDailyAlarmMarker: String = "",
     val dailyAlarmEnabled: Boolean = false,
     val dailyAlarmHour: Int = 8,
     val dailyAlarmMinute: Int = 0,
