@@ -1015,6 +1015,7 @@ internal class CatRenderer(private val context: Context) {
         resourceLoader?.destroy()
         assetLoader?.destroy()
         materialProvider?.destroyMaterials()
+        materialProvider?.destroy()
 
         swapChain?.let { eng.destroySwapChain(it) }
         view?.let { eng.destroyView(it) }
