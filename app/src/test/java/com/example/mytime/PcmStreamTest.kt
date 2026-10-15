@@ -37,4 +37,23 @@ class PcmStreamTest {
         assertEquals(listOf(0, 2, 0), offsets)
         job.cancelAndJoin()
     }
+    @Test fun failedAudioServiceExitsOnFirstError() = runTest {
+        var writes = 0
+        try {
+            streamPcm(ShortArray(4), { _, _, _ -> writes++; -6 }, {})
+            fail("Expected failed track to exit")
+        } catch (expected: java.io.IOException) {
+            assertTrue(expected.message!!.contains("-6"))
+        }
+        assertEquals(1, writes)
+    }
+    @Test fun zeroProgressHasABoundedTimeout() = runTest {
+        var writes = 0
+        try {
+            streamPcm(ShortArray(4), { _, _, _ -> writes++; 0 }, {})
+            fail("Expected stalled track to exit")
+        } catch (expected: java.io.IOException) {
+            assertEquals(400, writes)
+        }
+    }
 }

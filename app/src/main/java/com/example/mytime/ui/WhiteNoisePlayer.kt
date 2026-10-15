@@ -1,5 +1,6 @@
 package com.example.mytime.ui
 
+import java.io.IOException
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
@@ -18,7 +19,7 @@ class WhiteNoisePlayer {
             AudioFormat.CHANNEL_OUT_MONO,
             AudioFormat.ENCODING_PCM_16BIT
         )
-        if (minBuffer <= 0) return@withContext
+        if (minBuffer <= 0) throw IOException("AudioTrack buffer unavailable: $minBuffer")
         val track = AudioTrack(
             AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -34,6 +35,7 @@ class WhiteNoisePlayer {
             AudioManager.AUDIO_SESSION_ID_GENERATE
         )
         try {
+            check(track.state == AudioTrack.STATE_INITIALIZED) { "AudioTrack initialization failed" }
             track.play()
             val buffer = ShortArray(1024)
             val random = Random(System.nanoTime())
@@ -49,7 +51,13 @@ class WhiteNoisePlayer {
             }
         } finally {
             // Only this session touches/releases its track; cancellation cannot revive it.
-            try { track.stop() } finally { track.release() }
+            try {
+                if (track.playState == AudioTrack.PLAYSTATE_PLAYING) track.stop()
+            } catch (error: IllegalStateException) {
+                DiagnosticLogger.log("AUDIO", "Track stop failed: ${error.message}")
+            } finally {
+                track.release()
+            }
         }
     }
 

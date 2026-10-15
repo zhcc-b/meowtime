@@ -578,7 +578,14 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         val previous = alarmPlaybackJob
         alarmPlaybackJob = viewModelScope.launch {
             previous?.cancelAndJoin()
-            alarmTonePlayer.play()
+            try {
+                alarmTonePlayer.play()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                DiagnosticLogger.log("AUDIO", "Alarm playback failed: ${error.message}")
+                _uiState.update { it.copy(isDailyAlarmRinging = false, isTimerAlertRinging = false) }
+            }
         }
     }
 
@@ -593,7 +600,14 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         playingSleepMode = mode
         sleepPlaybackJob = viewModelScope.launch {
             previous?.cancelAndJoin()
-            whiteNoisePlayer.play(mode)
+            try {
+                whiteNoisePlayer.play(mode)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                DiagnosticLogger.log("AUDIO", "Sleep playback failed: ${error.message}")
+                stopSleepSound(clearPersistedState = true)
+            }
         }
     }
 
