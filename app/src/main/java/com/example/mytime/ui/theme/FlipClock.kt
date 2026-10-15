@@ -968,40 +968,36 @@ private fun PortraitHeader(state: ClockState, onOpenSettings: () -> Unit) {
 
 @Composable
 private fun LandscapeDateLocationBlock(state: ClockState, modifier: Modifier = Modifier) {
+    val locationAndWeather = listOfNotNull(state.location, state.temperatureLabel()).joinToString(" · ")
     SettingsCardSurface(
-        shape = RoundedCornerShape(UiMetrics.CardRadius),
-        padding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
+        shape = RoundedCornerShape(18.dp),
+        padding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
         modifier = modifier
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(
-                    text = state.location,
-                    color = LiquidGlassText.copy(alpha = 0.82f),
-                    fontSize = 16.sp,
-                    fontFamily = UiFontFamily,
-                    letterSpacing = 1.3.sp,
-                    maxLines = 1
-                )
-                state.temperatureLabel()?.let { temperature ->
-                    Text(
-                        text = temperature,
-                        color = LiquidGlassText.copy(alpha = 0.94f),
-                        fontSize = 17.sp,
-                        fontFamily = UiFontFamily,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1
-                    )
-                }
-            }
-            Text(
-                text = "${state.date} · ${state.dayOfWeek}",
-                color = LiquidGlassText.copy(alpha = 0.76f),
-                fontSize = 15.sp,
-                fontFamily = UiFontFamily,
-                maxLines = 1
-            )
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            LandscapeHeaderLine(locationAndWeather, fontSize = 14.sp, alpha = 0.94f)
+            LandscapeHeaderLine("${state.date} · ${state.dayOfWeek}", fontSize = 12.sp, alpha = 0.76f)
         }
+    }
+}
+
+/** Keep each header row complete without making the clock pay for a wrapped third line. */
+@Composable
+private fun LandscapeHeaderLine(text: String, fontSize: androidx.compose.ui.unit.TextUnit, alpha: Float) {
+    val measurer = rememberTextMeasurer()
+    BoxWithConstraints {
+        val style = TextStyle(fontFamily = UiFontFamily, fontSize = fontSize)
+        val measuredWidth = measurer.measure(text, style, softWrap = false, maxLines = 1).size.width
+        val availableWidth = with(LocalDensity.current) { maxWidth.toPx() }
+        val fit = if (measuredWidth > 0) (availableWidth / measuredWidth).coerceAtMost(1f) else 1f
+        Text(
+            text = text,
+            color = LiquidGlassText.copy(alpha = alpha),
+            fontSize = fontSize * fit,
+            fontFamily = UiFontFamily,
+            maxLines = 1,
+            softWrap = false
+        )
     }
 }
 
