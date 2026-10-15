@@ -47,6 +47,7 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: ClockViewModel by viewModels()
     private var locationDialogMode by mutableStateOf<LocationDialogMode?>(null)
+    private var showNetworkLocationConsent by mutableStateOf(false)
     private val locationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
@@ -82,6 +83,21 @@ class MainActivity : ComponentActivity() {
         setContent {
             MytimeTheme {
                 val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+                if (showNetworkLocationConsent) {
+                    AlertDialog(
+                        onDismissRequest = { showNetworkLocationConsent = false },
+                        title = { Text(getString(R.string.network_location_title)) },
+                        text = { Text(getString(R.string.network_location_message)) },
+                        confirmButton = { TextButton(onClick = {
+                            showNetworkLocationConsent = false
+                            viewModel.allowNetworkLocationFallback()
+                        }) { Text(getString(R.string.network_location_allow)) } },
+                        dismissButton = { TextButton(onClick = {
+                            showNetworkLocationConsent = false
+                            viewModel.retryLocation()
+                        }) { Text(getString(R.string.network_location_device_only)) } }
+                    )
+                }
                 val dismissLocationDialog = {
                     locationDialogMode = null
                     viewModel.fetchLocation(hasLocationPermission = false)
@@ -144,6 +160,11 @@ class MainActivity : ComponentActivity() {
                 ) {
                     FlipClockScreen(
                         state = uiState,
+                        onRetryLocation = {
+                            if (uiState.location == getString(R.string.location_unavailable)) showNetworkLocationConsent = true
+                            else if (!hasLocationPermission() && !viewModel.isNetworkLocationFallbackAllowed()) requestLocationPermissions()
+                            else viewModel.retryLocation()
+                        },
                         onPlayAudio = { viewModel.playAudio() },
                         onOpenSettings = { viewModel.openSettings() },
                         onCloseSettings = { viewModel.closeSettings() },

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Meow Clock</string>
+    <string name="app_name">meowtime</string>
     <string name="settings_title">设置</string>
     <string name="settings_subtitle">液态控制</string>
     <string name="settings_gyroscope">陀螺仪 3D</string>
@@ -105,6 +105,14 @@
     <string name="location_permission_not_now">暂不</string>
     <string name="location_permission_open_settings">打开设置</string>
     <string name="location_permission_settings_message">这个应用的位置权限已被拒绝。若之后想启用，请前往系统设置手动开启。</string>
-    <string name="location_unavailable">位置已关闭</string>
+    <string name="location_unavailable">暂时无法定位，稍后自动重试</string>
     <string name="location_loading">定位中…</string>
+    <string name="location_cached">上次所在地区</string>
+    <string name="location_resolved">当前位置</string>
+    <string name="location_retry">重试定位与天气</string>
+    <string name="weather_refresh">刷新天气</string>
+    <string name="network_location_title">使用网络城市定位？</string>
+    <string name="network_location_message">设备定位不可用时，可通过 ipapi.co 根据公网 IP 估算城市并获取天气。该服务会看到你的公网 IP，不会收到 GPS 坐标；使用 VPN 时城市可能不准确。</string>
+    <string name="network_location_allow">允许网络城市定位</string>
+    <string name="network_location_device_only">仅重试设备定位</string>
 </resources>

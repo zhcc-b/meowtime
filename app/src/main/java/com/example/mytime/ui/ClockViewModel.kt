@@ -10,7 +10,6 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.location.Address
 import android.location.Geocoder
 import android.location.Location
 import android.location.LocationManager
@@ -18,7 +17,6 @@ import android.media.MediaPlayer
 import android.media.audiofx.LoudnessEnhancer
 import android.os.BatteryManager
 import android.os.Build
-import android.os.CancellationSignal
 import android.os.Looper
 import android.os.SystemClock
 import android.text.format.DateFormat
@@ -35,6 +33,9 @@ import com.example.mytime.R
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -52,7 +53,6 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.time.format.TextStyle
-import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
@@ -107,6 +107,9 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private var smoothParallax = Offset.Zero
     private var lastSensorUpdateTimeMs = 0L
     private var locationJob: Job? = null
+    private var diagnosticsJob: Job? = null
+    private var locationRetryJob: Job? = null
+    private var locationRetryAttempt = 0
     private var weatherJob: Job? = null
     private var tickerJob: Job? = null
     private var edgeLightJob: Job? = null
@@ -146,6 +149,17 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         }
         appContext.registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         observePersistedSettings()
+    }
+
+    private fun startDiagnostics() {
+        if (diagnosticsJob?.isActive == true) return
+        diagnosticsJob = viewModelScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                val state = _uiState.value
+                DiagnosticLogger.snapshot("mode=${state.clockMode}, running=${state.timerRunning}, weather=${state.particleWeather}, theme=${state.activeThemePreset}, cats=${state.isCatSystemEnabled}, parallax=${state.isParallaxEnabled}")
+                delay(5 * 60_000L)
+            }
+        }
     }
 
     private fun observePersistedSettings() {
@@ -621,51 +635,173 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         alarmTonePlayer.stop()
     }
 
+    fun isNetworkLocationFallbackAllowed(): Boolean =
+        appContext.getSharedPreferences("weather_location", Context.MODE_PRIVATE)
+            .getBoolean("allowNetworkLocation", false)
+
+    fun allowNetworkLocationFallback() {
+        appContext.getSharedPreferences("weather_location", Context.MODE_PRIVATE)
+            .edit().putBoolean("allowNetworkLocation", true).apply()
+        retryLocation()
+    }
+
+    private fun fetchNetworkCity(): Pair<Location, String>? {
+        if (!appContext.getSharedPreferences("weather_location", Context.MODE_PRIVATE)
+                .getBoolean("allowNetworkLocation", false)) return null
+        val connection = URL("https://ipapi.co/json/").openConnection() as HttpURLConnection
+        return try {
+            connection.setRequestProperty("User-Agent", "MeowClock/1.1")
+            connection.setRequestProperty("Accept", "application/json")
+            connection.connectTimeout = 6_000
+            connection.readTimeout = 6_000
+            val status = connection.responseCode
+            if (status !in 200..299) {
+                DiagnosticLogger.log("LOCATION", "IP city service HTTP $status")
+                return null
+            }
+            val response = connection.inputStream.bufferedReader().use { JSONObject(it.readText()) }
+            val latitude = response.optDouble("latitude", Double.NaN)
+            val longitude = response.optDouble("longitude", Double.NaN)
+            if (response.optBoolean("error") || !LocationRecoveryPolicy.validCoordinates(latitude, longitude)) return null
+            val city = response.optString("city").ifBlank { response.optString("region") }
+            if (city.isBlank()) return null
+            val location = Location("ip").apply {
+                this.latitude = latitude
+                this.longitude = longitude
+                accuracy = 25_000f
+                time = System.currentTimeMillis()
+            }
+            DiagnosticLogger.log("LOCATION", "city-level IP fallback succeeded")
+            location to city.uppercase(locale)
+        } catch (error: Exception) {
+            DiagnosticLogger.log("LOCATION", "city-level IP fallback failed", error)
+            null
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    fun retryLocation() {
+        if (locationJob?.isActive == true) return
+        locationRetryAttempt = 0
+        fetchLocation(hasLocationPermission = hasDeviceLocationPermission())
+    }
+
+    private fun hasDeviceLocationPermission(): Boolean =
+        appContext.checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            appContext.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    private fun restoreWeatherLocation() {
+        if (deviceLatitude != null) return
+        val prefs = appContext.getSharedPreferences("weather_location", Context.MODE_PRIVATE)
+        if (!LocationRecoveryPolicy.isCacheFresh(prefs.getLong("savedAt", 0L), System.currentTimeMillis())) return
+        val lat = java.lang.Double.longBitsToDouble(prefs.getLong("latitude", java.lang.Double.doubleToLongBits(Double.NaN)))
+        val lon = java.lang.Double.longBitsToDouble(prefs.getLong("longitude", java.lang.Double.doubleToLongBits(Double.NaN)))
+        if (!LocationRecoveryPolicy.validCoordinates(lat, lon)) return
+        deviceLatitude = lat
+        deviceLongitude = lon
+        val city = prefs.getString("city", null)?.removeSuffix("（大致位置）")?.removeSuffix(" (approx.)")
+        _uiState.update { it.copy(location = city ?: appContext.getString(R.string.location_cached)) }
+        DiagnosticLogger.log("LOCATION", "restored recent successful location")
+    }
+
     fun fetchLocation(hasLocationPermission: Boolean) {
         locationJob?.cancel()
         locationJob = viewModelScope.launch(Dispatchers.IO) {
-            DiagnosticLogger.log("LOCATION", "refresh requested; permission=$hasLocationPermission")
-            val location = if (hasLocationPermission) fetchDeviceLocation() else null
-            val city = location?.let { reverseGeocodeCity(it) }
-            _uiState.update {
-                it.copy(location = city?.uppercase(locale) ?: appContext.getString(R.string.location_unavailable))
+            restoreWeatherLocation()
+            val hadLocation = deviceLatitude != null
+            DiagnosticLogger.log("LOCATION", "refresh requested; permission=$hasLocationPermission; cached=$hadLocation")
+            _uiState.update { it.copy(isLocationRefreshing = true,
+                location = if (hadLocation) it.location else appContext.getString(R.string.location_loading)) }
+            try {
+                // Cached coordinates keep weather usable while a fresh fix is attempted.
+                if (hadLocation && _uiState.value.temperatureCelsius == null) fetchAndApplyWeather()
+                var location = try {
+                    withTimeoutOrNull(20_000L) {
+                        if (hasLocationPermission) fetchDeviceLocation() else null
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    DiagnosticLogger.log("LOCATION", "request failed", error)
+                    null
+                }
+                currentCoroutineContext().ensureActive()
+                val networkCity = if (location == null) fetchNetworkCity() else null
+                currentCoroutineContext().ensureActive()
+                if (networkCity != null) location = networkCity.first
+                if (location != null) {
+                    deviceLatitude = location.latitude
+                    deviceLongitude = location.longitude
+                    // Weather needs coordinates, not a working Android geocoder.
+                    _uiState.update { it.copy(location = appContext.getString(R.string.location_resolved)) }
+                    fetchAndApplyWeather()
+                    currentCoroutineContext().ensureActive()
+                    val city = networkCity?.second ?: withTimeoutOrNull(6_000L) { reverseGeocodeCity(location) }
+                    currentCoroutineContext().ensureActive()
+                    val label = city?.uppercase(locale) ?: appContext.getString(R.string.location_resolved)
+                    _uiState.update { it.copy(location = label) }
+                    appContext.getSharedPreferences("weather_location", Context.MODE_PRIVATE).edit()
+                        .putLong("latitude", java.lang.Double.doubleToLongBits(location.latitude))
+                        .putLong("longitude", java.lang.Double.doubleToLongBits(location.longitude))
+                        .putLong("savedAt", System.currentTimeMillis()).putString("city", label).apply()
+                    DiagnosticLogger.log("LOCATION", "resolved; provider=${location.provider}; cityAvailable=${city != null}")
+                } else {
+                    // A failed refresh must never erase the last working coordinates/weather.
+                    if (!hadLocation) _uiState.update { it.copy(location = appContext.getString(R.string.location_unavailable)) }
+                    DiagnosticLogger.log("LOCATION", "no fix; retaining previous weather; automatic retry enabled")
+                }
+                if (deviceLatitude != null && isAppActive) startWeatherRefresh()
+            } finally {
+                // Only this active attempt owns the loading indicator.
+                if (currentCoroutineContext().isActive) _uiState.update { it.copy(isLocationRefreshing = false) }
             }
-            if (location != null) {
-                deviceLatitude = location.latitude
-                deviceLongitude = location.longitude
-                DiagnosticLogger.log(
-                    "LOCATION",
-                    "location resolved; provider=${location.provider ?: "unknown"}, accuracy=${location.accuracy}m, city=${city ?: "unavailable"}"
-                )
-                fetchAndApplyWeather()
-                if (isAppActive) startWeatherRefresh()
-            } else {
-                deviceLatitude = null
-                deviceLongitude = null
-                stopWeatherRefresh()
-                DiagnosticLogger.log("LOCATION", "location unavailable")
+        }
+    }
+
+    private fun startLocationRecovery() {
+        if (locationRetryJob?.isActive == true) return
+        locationRetryJob = viewModelScope.launch {
+            while (isActive) {
+                delay(LocationRecoveryPolicy.retryDelayMillis(locationRetryAttempt))
+                if (locationJob?.isActive == true) continue
+                if (deviceLatitude == null || _uiState.value.weatherRefreshFailed || _uiState.value.temperatureCelsius == null) {
+                    locationRetryAttempt++
+                    DiagnosticLogger.log("LOCATION", "automatic retry attempt=$locationRetryAttempt")
+                    if (deviceLatitude != null) {
+                        locationJob = viewModelScope.launch(Dispatchers.IO) { fetchAndApplyWeather() }
+                    } else {
+                        fetchLocation(hasDeviceLocationPermission())
+                    }
+                }
             }
         }
     }
 
     @SuppressLint("MissingPermission")
     private suspend fun fetchDeviceLocation(): Location? {
-        // When Google Play services is present, its fused provider combines GPS, Wi-Fi and
-        // cell sources and is much more reliable than a single MIUI system provider.
-        requestGoogleFusedLocation()?.let { return it }
-
-        return runCatching {
-            val locationManager = appContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            val providers = locationManager.getProviders(true)
-            var bestLocation: Location? = null
-            for (provider in providers) {
-                val location = locationManager.getLastKnownLocation(provider) ?: continue
-                if (bestLocation == null || location.accuracy < bestLocation.accuracy) {
-                    bestLocation = location
-                }
-            }
-            bestLocation ?: requestFreshLocation(locationManager)
-        }.getOrNull()
+        val manager = appContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val providers = manager.getProviders(true).filter { it != LocationManager.PASSIVE_PROVIDER }
+        DiagnosticLogger.log("LOCATION", "enabled providers=${providers.joinToString()}; geocoder=${Geocoder.isPresent()}")
+        val cached = providers.mapNotNull { provider ->
+            runCatching { manager.getLastKnownLocation(provider) }.getOrNull()
+        }.filter { location ->
+            val age = SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos
+            age in 0..java.util.concurrent.TimeUnit.HOURS.toNanos(6)
+        }.minByOrNull { it.accuracy }
+        if (cached != null) return cached
+        // Try all available Android providers, not just the single provider picked by Criteria.
+        val systemFix = withTimeoutOrNull(10_000L) { requestFreshLocation(manager) }
+        if (systemFix != null) return systemFix
+        DiagnosticLogger.log("LOCATION", "system providers produced no fix; trying Google balanced location")
+        return try {
+            requestGoogleFusedLocation()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            DiagnosticLogger.log("LOCATION", "Google location unavailable", error)
+            null
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -675,7 +811,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                 val cancellationToken = CancellationTokenSource()
                 continuation.invokeOnCancellation { cancellationToken.cancel() }
                 fusedLocationClient
-                    .getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cancellationToken.token)
+                    .getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, cancellationToken.token)
                     .addOnSuccessListener { location ->
                         if (continuation.isActive) continuation.resume(location)
                     }
@@ -704,16 +840,19 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         weatherJob = null
     }
 
-    private fun fetchAndApplyWeather() {
+    private suspend fun fetchAndApplyWeather() {
         val latitude = deviceLatitude ?: return
         val longitude = deviceLongitude ?: return
         val weather = fetchWeatherFromApi(latitude, longitude)
+        currentCoroutineContext().ensureActive()
         if (weather == null) {
-            DiagnosticLogger.log("WEATHER", "request failed")
+            _uiState.update { it.copy(weatherRefreshFailed = true) }
+            DiagnosticLogger.log("WEATHER", "request failed; will retry automatically")
             return
         }
         _uiState.update {
             it.copy(
+                weatherRefreshFailed = false,
                 realWeather = weather.particleWeather,
                 temperatureCelsius = weather.temperatureCelsius,
                 apparentTemperatureCelsius = weather.apparentTemperatureCelsius,
@@ -765,7 +904,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                     hourlyForecast = parseHourlyForecast(response)
                 )
             }
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            DiagnosticLogger.log("WEATHER", "API failed", error)
             null
         } finally {
             connection.disconnect()
@@ -813,94 +953,71 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         }
     }
 
-    @SuppressLint("MissingPermission")
-    private suspend fun requestFreshLocation(locationManager: LocationManager): Location? {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            suspendCancellableCoroutine { continuation ->
-                val cancellationSignal = CancellationSignal()
-                continuation.invokeOnCancellation { cancellationSignal.cancel() }
-                locationManager.getCurrentLocation(
-                    LocationManager.FUSED_PROVIDER,
-                    cancellationSignal,
-                    appContext.mainExecutor
-                ) { location ->
+    @SuppressLint("MissingPermission", "Deprecated")
+    private suspend fun requestFreshLocation(locationManager: LocationManager): Location? =
+        suspendCancellableCoroutine { continuation ->
+            val providers = locationManager.getProviders(true).filter { it != LocationManager.PASSIVE_PROVIDER }
+            if (providers.isEmpty()) {
+                DiagnosticLogger.log("LOCATION", "no active system location providers")
+                continuation.resume(null)
+                return@suspendCancellableCoroutine
+            }
+            val listener = object : android.location.LocationListener {
+                override fun onLocationChanged(location: Location) {
                     if (continuation.isActive) {
+                        locationManager.removeUpdates(this)
                         continuation.resume(location)
                     }
                 }
+                @Deprecated("Deprecated in Java")
+                override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) = Unit
+                override fun onProviderEnabled(provider: String) = Unit
+                override fun onProviderDisabled(provider: String) = Unit
             }
-        } else {
-            @Suppress("DEPRECATION")
-            suspendCancellableCoroutine { continuation ->
-                val criteria = android.location.Criteria().apply {
-                    accuracy = android.location.Criteria.ACCURACY_COARSE
-                }
-                val provider = locationManager.getBestProvider(criteria, true)
-                    ?: locationManager.getProviders(true).firstOrNull()
-                if (provider == null) {
-                    continuation.resume(null)
-                    return@suspendCancellableCoroutine
-                }
-                val listener = object : android.location.LocationListener {
-                    override fun onLocationChanged(location: Location) {
-                        locationManager.removeUpdates(this)
-                        if (continuation.isActive) {
-                            continuation.resume(location)
-                        }
+            continuation.invokeOnCancellation { runCatching { locationManager.removeUpdates(listener) } }
+            // Register on the same looper as callbacks to avoid leaving a late listener behind.
+            android.os.Handler(Looper.getMainLooper()).post {
+                if (!continuation.isActive) return@post
+                var registered = 0
+                for (provider in providers) {
+                    try {
+                        locationManager.requestLocationUpdates(provider, 1000L, 0f, listener, Looper.getMainLooper())
+                        registered++
+                    } catch (error: Exception) {
+                        DiagnosticLogger.log("LOCATION", "provider registration failed: $provider", error)
                     }
-
-                    @Deprecated("Deprecated in Java")
-                    override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) = Unit
-
-                    override fun onProviderEnabled(provider: String) = Unit
-
-                    override fun onProviderDisabled(provider: String) = Unit
                 }
-                continuation.invokeOnCancellation { locationManager.removeUpdates(listener) }
-                locationManager.requestSingleUpdate(provider, listener, Looper.getMainLooper())
+                if (!continuation.isActive) locationManager.removeUpdates(listener)
+                else if (registered == 0) continuation.resume(null)
             }
         }
-    }
 
-    private suspend fun reverseGeocodeCity(location: Location): String? {
-        val geocoder = Geocoder(appContext, locale)
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                suspendCancellableCoroutine { continuation ->
-                    geocoder.getFromLocation(
-                        location.latitude,
-                        location.longitude,
-                        1,
-                        object : Geocoder.GeocodeListener {
-                            override fun onGeocode(addresses: MutableList<Address>) {
-                                val city = addresses.firstOrNull()?.locality
-                                    ?: addresses.firstOrNull()?.subAdminArea
-                                    ?: addresses.firstOrNull()?.adminArea
-                                if (continuation.isActive) {
-                                    continuation.resume(city)
-                                }
-                            }
-
-                            override fun onError(errorMessage: String?) {
-                                if (continuation.isActive) {
-                                    continuation.resume(null)
-                                }
-                            }
-                        }
-                    )
+    private suspend fun reverseGeocodeCity(location: Location): String? =
+        suspendCancellableCoroutine { continuation ->
+            // A legacy Geocoder Binder call may never return. Use one bounded worker,
+            // with no queue, so repeated refreshes cannot leak threads or queued requests.
+            val geocoder = Geocoder(appContext, locale)
+            val latitude = location.latitude
+            val longitude = location.longitude
+            try {
+                geocodeExecutor.execute {
+                    val city = try {
+                        @Suppress("DEPRECATION")
+                        val addresses = geocoder.getFromLocation(
+                            latitude, longitude, 1
+                        )
+                        addresses?.firstOrNull()?.let { it.locality ?: it.subAdminArea ?: it.adminArea }
+                    } catch (error: Exception) {
+                        DiagnosticLogger.log("LOCATION", "city lookup failed", error)
+                        null
+                    }
+                    if (continuation.isActive) continuation.resume(city)
                 }
-            } else {
-                @Suppress("DEPRECATION")
-                val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
-                addresses?.firstOrNull()?.locality
-                    ?: addresses?.firstOrNull()?.subAdminArea
-                    ?: addresses?.firstOrNull()?.adminArea
+            } catch (_: java.util.concurrent.RejectedExecutionException) {
+                DiagnosticLogger.log("LOCATION", "city lookup busy; skipped")
+                continuation.resume(null)
             }
-        } catch (_: IOException) {
-            // Emulator/device geocoding can time out; location is optional for the clock UI.
-            null
         }
-    }
 
     fun playAudio() {
         if (mediaPlayer == null) {
@@ -1295,10 +1412,16 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         isAppActive = active
         if (active) {
             startClockTicker()
+            startDiagnostics()
+            startLocationRecovery()
             registerRotationSensorIfNeeded()
             if (deviceLatitude != null && deviceLongitude != null) startWeatherRefresh()
         } else {
             stopClockTicker()
+            locationRetryJob?.cancel()
+            locationRetryJob = null
+            diagnosticsJob?.cancel()
+            diagnosticsJob = null
             unregisterRotationSensor()
             stopWeatherRefresh()
         }
@@ -1386,8 +1509,13 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     private companion object {
+        val geocodeExecutor = java.util.concurrent.ThreadPoolExecutor(
+            0, 1, 30L, java.util.concurrent.TimeUnit.SECONDS,
+            java.util.concurrent.SynchronousQueue<Runnable>(),
+            java.util.concurrent.ThreadFactory { task -> Thread(task, "MeowCityLookup").apply { isDaemon = true } }
+        )
         const val PARALLAX_UPDATE_INTERVAL_MS = 100L
-        const val GOOGLE_LOCATION_TIMEOUT_MS = 12_000L
+        const val GOOGLE_LOCATION_TIMEOUT_MS = 8_000L
         const val WIND_EFFECT_SPEED_KMH = 25.0
         const val WIND_EFFECT_GUST_KMH = 40.0
     }
@@ -1402,6 +1530,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         unregisterRotationSensor()
         runCatching { appContext.unregisterReceiver(batteryReceiver) }
         locationJob?.cancel()
+        locationRetryJob?.cancel()
+        diagnosticsJob?.cancel()
         stopWeatherRefresh()
         mediaPlayer?.release()
         loudnessEnhancer?.release()

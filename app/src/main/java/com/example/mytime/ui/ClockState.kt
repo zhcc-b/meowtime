@@ -22,6 +22,8 @@ data class ClockState(
     val batteryLevel: String = "--",
     val isCharging: Boolean = false,
     val location: String = "--",
+    val isLocationRefreshing: Boolean = false,
+    val weatherRefreshFailed: Boolean = false,
     val backgroundRes: Int? = null,
     
     // 设置项

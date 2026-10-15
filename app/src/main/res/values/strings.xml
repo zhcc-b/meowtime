@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Meow Clock</string>
+    <string name="app_name">meowtime</string>
     <string name="settings_title">Settings</string>
     <string name="settings_subtitle">Liquid controls</string>
     <string name="settings_gyroscope">Gyroscope 3D</string>
@@ -106,6 +106,14 @@
     <string name="location_permission_not_now">Not now</string>
     <string name="location_permission_open_settings">Open settings</string>
     <string name="location_permission_settings_message">Location access has been denied for this app. Open system settings if you want to enable it later.</string>
-    <string name="location_unavailable">LOCATION OFF</string>
+    <string name="location_unavailable">Location unavailable — retrying</string>
     <string name="location_loading">LOCATING…</string>
+    <string name="location_cached">Last known area</string>
+    <string name="location_resolved">Current area</string>
+    <string name="location_retry">Retry location and weather</string>
+    <string name="weather_refresh">Refresh weather</string>
+    <string name="network_location_title">Use network city location?</string>
+    <string name="network_location_message">If device location is unavailable, ipapi.co can estimate your city from your public IP address to fetch weather. The service sees your IP address; GPS coordinates are not sent to it. VPNs may affect accuracy.</string>
+    <string name="network_location_allow">Allow network city location</string>
+    <string name="network_location_device_only">Retry device location only</string>
 </resources>

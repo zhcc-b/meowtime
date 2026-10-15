@@ -30,6 +30,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -69,6 +70,7 @@ internal fun SettingsMenu(
     shouldScrollToAlarmSettings: Boolean,
     onAlarmSettingsScrollHandled: () -> Unit,
     onClose: () -> Unit,
+    onRetryLocation: () -> Unit,
     onSelectFont: (ClockFont) -> Unit,
     onToggleParallax: (Boolean) -> Unit,
     onToggleParticleWeatherAuto: (Boolean) -> Unit,
@@ -130,13 +132,20 @@ internal fun SettingsMenu(
                         )
                         HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
                         SettingToggle(stringResource(id = R.string.settings_gyroscope), state.isParallaxEnabled, onToggleParallax)
-            ParticleWeatherSelector(
-                isAuto = state.isParticleWeatherAuto,
-                hasRealWeather = state.realWeather != null,
-                selected = state.particleWeather,
+                        ParticleWeatherSelector(
+                            isAuto = state.isParticleWeatherAuto,
+                            hasRealWeather = state.realWeather != null,
+                            selected = state.particleWeather,
                             onToggleAuto = onToggleParticleWeatherAuto,
                             onSelectWeather = onSelectParticleWeather
                         )
+                        TextButton(onClick = onRetryLocation, enabled = !state.isLocationRefreshing) {
+                            Text(stringResource(when {
+                                state.isLocationRefreshing -> R.string.location_loading
+                                state.temperatureCelsius == null || state.weatherRefreshFailed -> R.string.location_retry
+                                else -> R.string.weather_refresh
+                            }))
+                        }
                         SettingToggle(stringResource(id = R.string.settings_cats), state.isCatSystemEnabled, onToggleCats)
                         SettingToggle(stringResource(id = R.string.settings_24_hour), state.is24HourFormat, onToggle24HourFormat)
                         SleepSoundSelector(

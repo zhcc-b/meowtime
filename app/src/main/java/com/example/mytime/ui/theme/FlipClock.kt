@@ -82,6 +82,7 @@ fun FlipClockScreen(
     onPlayAudio: () -> Unit,
     onOpenSettings: () -> Unit,
     onCloseSettings: () -> Unit,
+    onRetryLocation: () -> Unit,
     onSelectFont: (ClockFont) -> Unit,
     onToggleParallax: (Boolean) -> Unit,
     onToggleParticleWeatherAuto: (Boolean) -> Unit,
@@ -220,6 +221,7 @@ fun FlipClockScreen(
             shouldScrollToAlarmSettings = shouldScrollToAlarmSettings,
             onAlarmSettingsScrollHandled = { shouldScrollToAlarmSettings = false },
             onClose = onCloseSettings,
+            onRetryLocation = onRetryLocation,
             onSelectFont = onSelectFont,
             onToggleParallax = onToggleParallax,
             onToggleParticleWeatherAuto = onToggleParticleWeatherAuto,
@@ -789,7 +791,7 @@ private fun ClockContent(
                 onSetPomodoroFocus = onSetPomodoroFocus,
                 onSetPomodoroBreak = onSetPomodoroBreak,
                 onSetCountdown = onSetCountdown,
-                onPlayAudio = onPlayAudio
+                    onPlayAudio = onPlayAudio
             )
             return@Box
         }
@@ -882,7 +884,7 @@ private fun PortraitClockContent(
             DateDayBlock(
                 state = state,
                 footerFontSize = footerFontSize,
-                modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f)
             )
             StatusControlCard(
                 batteryLevel = state.batteryLevel,
@@ -1034,7 +1036,7 @@ private fun LandscapeDateLocationBlock(state: ClockState, modifier: Modifier = M
         modifier = modifier.widthIn(min = 190.dp, max = 330.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(
                     text = state.location,
                     color = LiquidGlassText.copy(alpha = 0.82f),
