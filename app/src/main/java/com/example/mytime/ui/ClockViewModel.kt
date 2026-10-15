@@ -20,6 +20,7 @@ import android.os.Build
 import android.os.Looper
 import android.os.SystemClock
 import android.text.format.DateFormat
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.geometry.Offset
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -90,9 +91,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private var mediaPlayer: MediaPlayer? = null
     private var loudnessEnhancer: LoudnessEnhancer? = null
     private val whiteNoisePlayer = WhiteNoisePlayer()
-    private val alarmTonePlayer = AlarmTonePlayer()
-    private var alarmPlaybackJob: Job? = null
-    private val alertSoundOwners = AlertSoundOwners(::startAlarmPlayback, ::stopAlarmPlayback)
     private var sleepPlaybackJob: Job? = null
     private var playingSleepMode: SleepSoundMode? = null
     private val appContext: Context
@@ -119,10 +117,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private var tickerJob: Job? = null
     private var edgeLightJob: Job? = null
     private var sleepSoundJob: Job? = null
-    private var dailyAlarmJob: Job? = null
-    private var timerAlertJob: Job? = null
-    private var dailyAlarmSnoozeJob: Job? = null
-    private var dailyAlarmSnoozeDeadlineElapsedMs: Long? = null
     private var sleepSoundEndsAtElapsedMs: Long = 0L
     private var sensorRegistered = false
     private var isAppActive = false
@@ -144,6 +138,25 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         }
     }
 
+    private val alertReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) { refreshAlertState() }
+    }
+
+    private fun refreshAlertState() {
+        val now = System.currentTimeMillis()
+        val prefs = SystemAlarmScheduler.preferences(appContext)
+        val daily = prefs.getLong(AlertPlaybackService.untilKey(AlertKind.DAILY), 0) > now
+        val timer = prefs.getLong(AlertPlaybackService.untilKey(AlertKind.TIMER), 0) > now
+        val snooze = ((prefs.getLong("snoozeAt", 0) - now + 999) / 1000).coerceAtLeast(0).toInt()
+        _uiState.update { it.copy(isDailyAlarmRinging = daily, isTimerAlertRinging = timer, dailyAlarmSnoozeRemainingSeconds = snooze) }
+        if (daily || timer) showEdgeLight(EdgeLightMode.TIMER_ALERT) else if (_uiState.value.edgeLightMode == EdgeLightMode.TIMER_ALERT) clearEdgeLight()
+    }
+
+    private fun configureSystemAlarm() {
+        val state = _uiState.value
+        SystemAlarmScheduler.configure(appContext, state.dailyAlarmEnabled, state.dailyAlarmHour, state.dailyAlarmMinute)
+    }
+
     init {
         _uiState.update {
             it.copy(
@@ -152,6 +165,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
             )
         }
         appContext.registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        ContextCompat.registerReceiver(appContext, alertReceiver, IntentFilter(SystemAlarmScheduler.STATE_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED)
+        refreshAlertState()
         observePersistedSettings()
     }
 
@@ -204,7 +219,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         } else {
                             state.countdownRemainingSeconds
                         },
-                        dailyAlarmEnabled = preferences[PreferenceKeys.dailyAlarmEnabled] ?: state.dailyAlarmEnabled,
+                        dailyAlarmEnabled = (preferences[PreferenceKeys.dailyAlarmEnabled] ?: state.dailyAlarmEnabled) && SystemAlarmScheduler.canSchedule(appContext),
                         dailyAlarmHour = preferences[PreferenceKeys.dailyAlarmHour] ?: state.dailyAlarmHour,
                         dailyAlarmMinute = preferences[PreferenceKeys.dailyAlarmMinute] ?: state.dailyAlarmMinute,
                         selectedThemePreset = preset,
@@ -212,6 +227,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         whiteNoiseEnabled = preferences[PreferenceKeys.whiteNoise] ?: state.whiteNoiseEnabled
                     )
                 }
+                configureSystemAlarm()
                 val soundState = _uiState.value
                 if (soundState.whiteNoiseEnabled) {
                     if (sleepSoundEndsAtElapsedMs == 0L) {
@@ -248,9 +264,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                 )
 
                 val elapsedNow = SystemClock.elapsedRealtime()
-                val snoozeRemaining = dailyAlarmSnoozeDeadlineElapsedMs?.let {
-                    ((it - elapsedNow + 999L) / 1000L).coerceAtLeast(0L).toInt()
-                } ?: 0
+                val snoozeRemaining = ((SystemAlarmScheduler.preferences(appContext).getLong("snoozeAt", 0) - System.currentTimeMillis() + 999L) / 1000L).coerceAtLeast(0L).toInt()
                 val nextOffset = Offset(random.nextFloat() * 20f - 10f, random.nextFloat() * 20f - 10f)
                 val nextFont = AvailableClockFonts.random()
                 val sideEffects = _uiState.updateAndGetEffect { state ->
@@ -262,14 +276,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                     effects = effects.withModeTick(modeTick)
 
                     val burnInOffset = if (timeTick.minute != lastMinute) nextOffset else workingState.burnInOffset
-                    val alarmTick = advanceAlarmTick(
-                        state = workingState,
-                        timeTick = timeTick,
-                        companionMessage = modeTick.message ?: workingState.companionMessage,
-                        snoozeRemainingSeconds = snoozeRemaining
-                    )
-                    workingState = alarmTick.state
-                    effects = effects.withAlarmTick(alarmTick)
 
                     workingState.copy(
                         hour = timeTick.displayHour,
@@ -288,8 +294,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         },
                         particleWeather = if (workingState.isParticleWeatherAuto) activeWeather else workingState.particleWeather,
                         burnInOffset = burnInOffset,
-                        dailyAlarmSnoozeRemainingSeconds = alarmTick.snoozeRemainingSeconds,
-                        companionMessage = alarmTick.companionMessage
+                        dailyAlarmSnoozeRemainingSeconds = snoozeRemaining,
+                        companionMessage = modeTick.message ?: workingState.companionMessage
                     ) to effects
                 }
 
@@ -320,16 +326,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         val recentAutoWeathers: ArrayDeque<ParticleWeather> = ArrayDeque()
     )
 
-    private data class AlarmTickResult(
-        val state: ClockState,
-        val snoozeRemainingSeconds: Int,
-        val companionMessage: String,
-        val shouldStartDailyAlarm: Boolean = false
-    )
-
     private data class ClockTickerSideEffects(
         val shouldPlayReminder: Boolean = false,
-        val shouldStartDailyAlarm: Boolean = false,
         val shouldStartTimerAlert: Boolean = false,
         val edgeLightMode: EdgeLightMode? = null,
         val edgeLightDurationMs: Long? = null
@@ -343,11 +341,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
             )
         }
 
-        fun withAlarmTick(alarmTick: AlarmTickResult): ClockTickerSideEffects {
-            return copy(
-                shouldStartDailyAlarm = shouldStartDailyAlarm || alarmTick.shouldStartDailyAlarm
-            )
-        }
     }
 
     private fun buildTimeTick(now: ZonedDateTime, state: ClockState): TimeTick {
@@ -445,44 +438,9 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         return modeTickResult(ClockStateReducers.advanceElapsedMode(state, nowElapsedMs))
     }
 
-    private fun advanceAlarmTick(
-        state: ClockState,
-        timeTick: TimeTick,
-        companionMessage: String,
-        snoozeRemainingSeconds: Int
-    ): AlarmTickResult {
-        val dailyMarker = "${timeTick.date}-${state.dailyAlarmHour}-${state.dailyAlarmMinute}"
-        var nextMessage = companionMessage
-        var shouldStartDailyAlarm = false
-
-        if (
-            ClockStateReducers.shouldTriggerDailyAlarm(
-                state = state,
-                hour24 = timeTick.hour24,
-                minute = timeTick.minute,
-                second = timeTick.second,
-                dailyMarker = dailyMarker,
-                lastDailyAlarmMarker = state.lastDailyAlarmMarker
-            )
-        ) {
-            shouldStartDailyAlarm = true
-            nextMessage = appContext.getString(R.string.reminder_alarm_now)
-        }
-
-        return AlarmTickResult(
-            state = if (shouldStartDailyAlarm) state.copy(lastDailyAlarmMarker = dailyMarker) else state,
-            snoozeRemainingSeconds = snoozeRemainingSeconds,
-            companionMessage = nextMessage,
-            shouldStartDailyAlarm = shouldStartDailyAlarm
-        )
-    }
-
     private fun runTickerSideEffects(sideEffects: ClockTickerSideEffects) {
         if (sideEffects.shouldPlayReminder) {
             playAudio()
-        }
-        if (sideEffects.shouldStartDailyAlarm) {
-            startDailyAlarm()
         }
         if (sideEffects.shouldStartTimerAlert) {
             startTimerAlert()
@@ -574,26 +532,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         )
     }
 
-    private fun startAlarmPlayback() {
-        if (alarmPlaybackJob?.isActive == true) return
-        val previous = alarmPlaybackJob
-        alarmPlaybackJob = viewModelScope.launch {
-            previous?.cancelAndJoin()
-            try {
-                alarmTonePlayer.play()
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                DiagnosticLogger.log("AUDIO", "Alarm playback failed: ${error.message}")
-                _uiState.update { it.copy(isDailyAlarmRinging = false, isTimerAlertRinging = false) }
-            }
-        }
-    }
-
-    private fun stopAlarmPlayback() {
-        alarmPlaybackJob?.cancel()
-    }
-
     private fun startSleepPlayback(mode: SleepSoundMode) {
         if (sleepPlaybackJob?.isActive == true && playingSleepMode == mode) return
         val previous = sleepPlaybackJob
@@ -617,53 +555,15 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         playingSleepMode = null
     }
 
-    private fun startDailyAlarm() {
-        dailyAlarmJob?.cancel()
-        alertSoundOwners.acquire(AlertKind.DAILY)
-        showEdgeLight(EdgeLightMode.TIMER_ALERT, DAILY_ALARM_RING_MS)
-        _uiState.update {
-            it.copy(
-                isDailyAlarmRinging = true,
-                companionMessage = appContext.getString(R.string.reminder_alarm_now)
-            )
-        }
-        dailyAlarmJob = viewModelScope.launch {
-            delay(DAILY_ALARM_RING_MS)
-            stopDailyAlarmSound()
-            clearEdgeLight()
-            _uiState.update { it.copy(isDailyAlarmRinging = false) }
-        }
-    }
-
-    private fun stopDailyAlarmSound() {
-        dailyAlarmJob?.cancel()
-        dailyAlarmJob = null
-        alertSoundOwners.release(AlertKind.DAILY)
-    }
+    private fun stopDailyAlarmSound() { AlertPlaybackService.stop(appContext, AlertKind.DAILY) }
 
     private fun startTimerAlert() {
-        timerAlertJob?.cancel()
-        alertSoundOwners.acquire(AlertKind.TIMER)
-        showEdgeLight(EdgeLightMode.TIMER_ALERT, DAILY_ALARM_RING_MS)
-        _uiState.update {
-            it.copy(
-                isTimerAlertRinging = true,
-                companionMessage = appContext.getString(R.string.timer_alert_now)
-            )
-        }
-        timerAlertJob = viewModelScope.launch {
-            delay(DAILY_ALARM_RING_MS)
-            stopTimerAlertSound()
-            clearEdgeLight()
-            _uiState.update { it.copy(isTimerAlertRinging = false) }
-        }
+        AlertPlaybackService.ring(appContext, AlertKind.TIMER)
+        showEdgeLight(EdgeLightMode.TIMER_ALERT)
+        _uiState.update { it.copy(isTimerAlertRinging = true, companionMessage = appContext.getString(R.string.timer_alert_now)) }
     }
 
-    private fun stopTimerAlertSound() {
-        timerAlertJob?.cancel()
-        timerAlertJob = null
-        alertSoundOwners.release(AlertKind.TIMER)
-    }
+    private fun stopTimerAlertSound() { AlertPlaybackService.stop(appContext, AlertKind.TIMER) }
 
     fun isNetworkLocationFallbackAllowed(): Boolean =
         appContext.getSharedPreferences("weather_location", Context.MODE_PRIVATE)
@@ -1267,6 +1167,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         if (!enabled) {
             dismissDailyAlarm()
         }
+        configureSystemAlarm()
         persistSetting { this[PreferenceKeys.dailyAlarmEnabled] = enabled }
     }
 
@@ -1274,6 +1175,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         val normalizedHour = hour.floorMod(24)
         if (_uiState.value.dailyAlarmHour == normalizedHour) return
         _uiState.update { it.copy(dailyAlarmHour = normalizedHour) }
+        configureSystemAlarm()
         persistSetting { this[PreferenceKeys.dailyAlarmHour] = normalizedHour }
     }
 
@@ -1281,29 +1183,16 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         val normalizedMinute = minute.floorMod(60)
         if (_uiState.value.dailyAlarmMinute == normalizedMinute) return
         _uiState.update { it.copy(dailyAlarmMinute = normalizedMinute) }
+        configureSystemAlarm()
         persistSetting { this[PreferenceKeys.dailyAlarmMinute] = normalizedMinute }
     }
 
     fun snoozeDailyAlarm() {
+        if (!SystemAlarmScheduler.snooze(appContext)) return
         stopDailyAlarmSound()
         clearEdgeLight()
-        val snoozeSeconds = (DAILY_ALARM_SNOOZE_MS / 1000L).toInt()
-        dailyAlarmSnoozeDeadlineElapsedMs = SystemClock.elapsedRealtime() + DAILY_ALARM_SNOOZE_MS
         _uiState.update {
-            ClockStateReducers.snoozeDailyAlarmState(
-                state = it,
-                snoozeSeconds = snoozeSeconds,
-                message = appContext.getString(R.string.alarm_snoozed_message)
-            )
-        }
-        dailyAlarmSnoozeJob?.cancel()
-        dailyAlarmSnoozeJob = viewModelScope.launch {
-            delay(DAILY_ALARM_SNOOZE_MS)
-            dailyAlarmSnoozeDeadlineElapsedMs = null
-            _uiState.update { it.copy(dailyAlarmSnoozeRemainingSeconds = 0) }
-            if (_uiState.value.dailyAlarmEnabled) {
-                startDailyAlarm()
-            }
+            ClockStateReducers.snoozeDailyAlarmState(it, (SystemAlarmScheduler.SNOOZE_MS / 1000).toInt(), appContext.getString(R.string.alarm_snoozed_message))
         }
     }
 
@@ -1346,11 +1235,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         }
     }
 
-    private fun clearDailyAlarmSnooze() {
-        dailyAlarmSnoozeJob?.cancel()
-        dailyAlarmSnoozeJob = null
-        dailyAlarmSnoozeDeadlineElapsedMs = null
-    }
+    private fun clearDailyAlarmSnooze() { SystemAlarmScheduler.cancel(appContext, true) }
 
     fun setThemePreset(preset: ThemePreset) {
         _uiState.update { state ->
@@ -1447,6 +1332,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         if (isAppActive == active) return
         isAppActive = active
         if (active) {
+            refreshAlertState()
             startClockTicker()
             startDiagnostics()
             startLocationRecovery()
@@ -1559,12 +1445,10 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     override fun onCleared() {
         edgeLightJob?.cancel()
         sleepSoundJob?.cancel()
-        dailyAlarmJob?.cancel()
-        timerAlertJob?.cancel()
-        dailyAlarmSnoozeJob?.cancel()
         stopClockTicker()
         unregisterRotationSensor()
         runCatching { appContext.unregisterReceiver(batteryReceiver) }
+        runCatching { appContext.unregisterReceiver(alertReceiver) }
         locationJob?.cancel()
         locationRetryJob?.cancel()
         diagnosticsJob?.cancel()
@@ -1572,8 +1456,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         mediaPlayer?.release()
         loudnessEnhancer?.release()
         stopSleepPlayback()
-        alertSoundOwners.clear()
-        stopAlarmPlayback()
         mediaPlayer = null
         loudnessEnhancer = null
         super.onCleared()
@@ -1581,8 +1463,6 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
 }
 
 private const val SLEEP_SOUND_DURATION_MS = 60L * 60L * 1000L
-private const val DAILY_ALARM_RING_MS = 9L * 60L * 1000L
-private const val DAILY_ALARM_SNOOZE_MS = 10L * 60L * 1000L
 private const val WEATHER_ROTATION_INTERVAL_SEC = 8L * 60L * 60L
 private const val WEATHER_REFRESH_INTERVAL_MS = 30L * 60L * 1000L
 private const val TIMER_ALERT_EDGE_MS = 5_000L

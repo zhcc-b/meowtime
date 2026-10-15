@@ -116,4 +116,10 @@
     <string name="network_location_message">If device location is unavailable, ipapi.co can estimate your city from your public IP address to fetch weather. The service sees your IP address; GPS coordinates are not sent to it. VPNs may affect accuracy.</string>
     <string name="network_location_allow">Allow network city location</string>
     <string name="network_location_device_only">Retry device location only</string>
+    <string name="alert_notification_channel">Clock alarms</string>
+    <string name="alert_notification_text">An alarm or timer is ringing</string>
+    <string name="alert_notification_stop">Stop alerts</string>
+    <string name="alarm_access_title">Allow background alarms</string>
+    <string name="alarm_access_message">Allow alarms and reminders so meowtime can ring on time while the screen is off.</string>
+    <string name="alarm_access_open">Open settings</string>
 </resources>

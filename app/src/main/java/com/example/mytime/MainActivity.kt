@@ -6,6 +6,7 @@ import android.graphics.Color as AndroidColor
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import android.provider.Settings
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -29,6 +30,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.mytime.ui.SystemAlarmScheduler
 import com.example.mytime.ui.ClockViewModel
 import com.example.mytime.ui.ClockMode
 import com.example.mytime.ui.DiagnosticLogger
@@ -47,6 +49,19 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: ClockViewModel by viewModels()
     private var locationDialogMode by mutableStateOf<LocationDialogMode?>(null)
+    private var showAlarmAccessDialog by mutableStateOf(false)
+    private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    private val alarmAccessLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (SystemAlarmScheduler.canSchedule(this@MainActivity)) enableDailyAlarm()
+    }
+
+    private fun enableDailyAlarm() {
+        viewModel.toggleDailyAlarm(true)
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     private var showNetworkLocationConsent by mutableStateOf(false)
     private val locationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -83,6 +98,20 @@ class MainActivity : ComponentActivity() {
         setContent {
             MytimeTheme {
                 val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+                if (showAlarmAccessDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showAlarmAccessDialog = false },
+                        title = { Text(getString(R.string.alarm_access_title)) },
+                        text = { Text(getString(R.string.alarm_access_message)) },
+                        confirmButton = { TextButton(onClick = {
+                            showAlarmAccessDialog = false
+                            if (Build.VERSION.SDK_INT >= 31) {
+                                alarmAccessLauncher.launch(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:$packageName")))
+                            }
+                        }) { Text(getString(R.string.alarm_access_open)) } },
+                        dismissButton = { TextButton(onClick = { showAlarmAccessDialog = false }) { Text(getString(android.R.string.cancel)) } }
+                    )
+                }
                 if (showNetworkLocationConsent) {
                     AlertDialog(
                         onDismissRequest = { showNetworkLocationConsent = false },
@@ -180,7 +209,13 @@ class MainActivity : ComponentActivity() {
                         onSetPomodoroFocus = { viewModel.setPomodoroFocusMinutes(it) },
                         onSetPomodoroBreak = { viewModel.setPomodoroBreakMinutes(it) },
                         onSetCountdown = { viewModel.setCountdownDurationMinutes(it) },
-                        onToggleDailyAlarm = { viewModel.toggleDailyAlarm(it) },
+                        onToggleDailyAlarm = { enabled ->
+                            when {
+                                !enabled -> viewModel.toggleDailyAlarm(false)
+                                !SystemAlarmScheduler.canSchedule(this@MainActivity) -> showAlarmAccessDialog = true
+                                else -> enableDailyAlarm()
+                            }
+                        },
                         onSetDailyAlarmHour = { viewModel.setDailyAlarmHour(it) },
                         onSetDailyAlarmMinute = { viewModel.setDailyAlarmMinute(it) },
                         onSnoozeDailyAlarm = { viewModel.snoozeDailyAlarm() },

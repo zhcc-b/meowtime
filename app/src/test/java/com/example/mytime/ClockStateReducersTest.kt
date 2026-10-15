@@ -93,37 +93,6 @@ class ClockStateReducersTest {
     }
 
     @Test
-    fun dailyAlarmTriggersOnlyAtExactEnabledTimeOncePerMarker() {
-        val state = ClockState(
-            dailyAlarmEnabled = true,
-            dailyAlarmHour = 7,
-            dailyAlarmMinute = 30
-        )
-        val marker = "Apr 19, 2026-7-30"
-
-        assertTrue(
-            ClockStateReducers.shouldTriggerDailyAlarm(
-                state = state,
-                hour24 = 7,
-                minute = 30,
-                second = 0,
-                dailyMarker = marker,
-                lastDailyAlarmMarker = ""
-            )
-        )
-        assertFalse(
-            ClockStateReducers.shouldTriggerDailyAlarm(
-                state = state,
-                hour24 = 7,
-                minute = 30,
-                second = 0,
-                dailyMarker = marker,
-                lastDailyAlarmMarker = marker
-            )
-        )
-    }
-
-    @Test
     fun snoozeAndDismissClearRingingStatePredictably() {
         val ringing = ClockState(
             isDailyAlarmRinging = true,

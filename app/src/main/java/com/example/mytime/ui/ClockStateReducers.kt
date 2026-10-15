@@ -87,22 +87,6 @@ internal object ClockStateReducers {
         return effect.copy(state = current)
     }
 
-    fun shouldTriggerDailyAlarm(
-        state: ClockState,
-        hour24: Int,
-        minute: Int,
-        second: Int,
-        dailyMarker: String,
-        lastDailyAlarmMarker: String
-    ): Boolean {
-        return state.dailyAlarmEnabled &&
-            !state.isDailyAlarmRinging &&
-            hour24 == state.dailyAlarmHour &&
-            minute == state.dailyAlarmMinute &&
-            second == 0 &&
-            dailyMarker != lastDailyAlarmMarker
-    }
-
     fun snoozeDailyAlarmState(
         state: ClockState,
         snoozeSeconds: Int,
