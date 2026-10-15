@@ -223,7 +223,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
 
     private fun startClockTicker() {
         if (tickerJob?.isActive == true) return
-        tickerJob = viewModelScope.launch(Dispatchers.Default) {
+        tickerJob = viewModelScope.launch {
             var lastMinute = -1
             val weatherTicker = AutoWeatherTickerState(_uiState.value.particleWeather).apply {
                 rememberAutoWeather(activeWeather)
@@ -252,7 +252,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                     var effects = ClockTickerSideEffects()
                     var workingState = advanceThemeTick(state, resolvedPreset, nextFont)
 
-                    val modeTick = advanceModeTick(workingState)
+                    val modeTick = advanceModeTick(workingState, elapsedNow)
                     workingState = modeTick.state
                     effects = effects.withModeTick(modeTick)
 
@@ -436,8 +436,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         ).let { if (isAutoMode) it.copy(selectedFont = nextFont) else it }
     }
 
-    private fun advanceModeTick(state: ClockState): ModeTickResult {
-        return advanceModeState(state)
+    private fun advanceModeTick(state: ClockState, nowElapsedMs: Long): ModeTickResult {
+        return modeTickResult(ClockStateReducers.advanceElapsedMode(state, nowElapsedMs))
     }
 
     private fun advanceAlarmTick(
@@ -527,13 +527,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         val edgeLightDurationMs: Long? = null
     )
 
-    private fun advanceModeState(state: ClockState): ModeTickResult {
-        val result = ClockStateReducers.advanceModeState(
-            state = state,
-            timerAlertEdgeMs = TIMER_ALERT_EDGE_MS,
-            breakNudgeIntervalSec = BREAK_NUDGE_INTERVAL_SEC,
-            breakNudgeEdgeMs = BREAK_NUDGE_EDGE_MS
-        )
+    private fun modeTickResult(result: ClockStateReducers.ModeTickResult): ModeTickResult {
         return ModeTickResult(
             state = result.state,
             message = result.message.toCompanionMessage(),
@@ -1068,9 +1062,11 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     }
 
     fun toggleModeRunning() {
-        var nextState: ClockState? = null
-        _uiState.update { state ->
-            if (state.clockMode == ClockMode.CLOCK) {
+        val now = SystemClock.elapsedRealtime()
+        val tick = _uiState.updateAndGetEffect { previous ->
+            val result = advanceModeTick(previous, now)
+            val state = result.state
+            if (state.clockMode == ClockMode.CLOCK || (previous.timerRunning && !state.timerRunning)) {
                 state
             } else {
                 state.copy(
@@ -1079,11 +1075,13 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         appContext.getString(R.string.companion_timer_started)
                     } else {
                         appContext.getString(R.string.companion_timer_paused)
-                    }
-                ).also { nextState = it }
-            }
+                    },
+                    timerUpdatedAtElapsedMs = if (!state.timerRunning) now else null
+                )
+            } to result
         }
-        nextState?.let { updated ->
+        runTickerSideEffects(ClockTickerSideEffects().withModeTick(tick))
+        _uiState.value.let { updated ->
             when (updated.clockMode) {
                 ClockMode.STOPWATCH -> if (updated.timerRunning) showEdgeLight(EdgeLightMode.STOPWATCH_ACTIVE) else clearEdgeLight()
                 ClockMode.CLOCK -> Unit
@@ -1274,12 +1272,14 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     }
 
     fun repeatCountdownTimer() {
+        val now = SystemClock.elapsedRealtime()
         stopTimerAlertSound()
         clearEdgeLight()
         _uiState.update {
             it.copy(
                 clockMode = ClockMode.COUNTDOWN,
                 timerRunning = true,
+                timerUpdatedAtElapsedMs = now,
                 isTimerAlertRinging = false,
                 countdownRemainingSeconds = it.countdownDurationMinutes * 60,
                 companionMessage = appContext.getString(R.string.timer_repeat_message)

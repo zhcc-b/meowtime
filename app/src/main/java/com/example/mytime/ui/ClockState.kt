@@ -43,6 +43,7 @@ data class ClockState(
 
     // 模式与专注
     val clockMode: ClockMode = ClockMode.CLOCK,
+    val timerUpdatedAtElapsedMs: Long? = null,
     val timerRunning: Boolean = false,
     val pomodoroPhase: PomodoroPhase = PomodoroPhase.FOCUS,
     val pomodoroFocusMinutes: Int = 25,

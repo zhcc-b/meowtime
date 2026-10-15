@@ -31,6 +31,62 @@ internal object ClockStateReducers {
         }
     }
 
+    /** elapsedRealtime includes deep sleep and is independent of clock/time-zone edits. */
+    fun advanceElapsedMode(state: ClockState, nowElapsedMs: Long): ModeTickResult {
+        if (!state.timerRunning) return ModeTickResult(state.copy(timerUpdatedAtElapsedMs = null))
+        val anchor = state.timerUpdatedAtElapsedMs ?: nowElapsedMs
+        val seconds = ((nowElapsedMs - anchor).coerceAtLeast(0L) / 1000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val result = advanceModeBySeconds(state, seconds)
+        return result.copy(state = result.state.copy(
+            timerUpdatedAtElapsedMs = if (result.state.timerRunning) anchor + seconds * 1000L else null
+        ))
+    }
+
+    fun advanceModeBySeconds(state: ClockState, seconds: Int): ModeTickResult {
+        if (!state.timerRunning || seconds <= 0) return ModeTickResult(state)
+        if (state.clockMode == ClockMode.STOPWATCH) {
+            val next = (state.stopwatchElapsedSeconds.toLong() + seconds).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            val nudge = next / DEFAULT_BREAK_NUDGE_INTERVAL_SEC > state.stopwatchElapsedSeconds / DEFAULT_BREAK_NUDGE_INTERVAL_SEC
+            return ModeTickResult(state.copy(stopwatchElapsedSeconds = next),
+                message = if (nudge) ModeMessage.BREAK_NUDGE else null,
+                edgeLightMode = if (nudge) EdgeLightMode.BREAK_REMINDER else null,
+                edgeLightDurationMs = if (nudge) DEFAULT_BREAK_NUDGE_EDGE_MS else null)
+        }
+        if (state.clockMode == ClockMode.COUNTDOWN) {
+            return if (seconds >= state.countdownRemainingSeconds) {
+                advanceModeState(state.copy(countdownRemainingSeconds = 1))
+            } else ModeTickResult(state.copy(countdownRemainingSeconds = state.countdownRemainingSeconds - seconds))
+        }
+        if (state.clockMode != ClockMode.POMODORO) return ModeTickResult(state)
+        var remaining = seconds
+        var current = state
+        var effect = ModeTickResult(state)
+        // Skip full cycles arithmetically so a long sleep cannot cause a per-second loop.
+        val cycle = (state.pomodoroFocusMinutes + state.pomodoroBreakMinutes) * 60
+        val cycles = remaining / cycle
+        if (cycles > 0) {
+            current = current.copy(
+                focusedSecondsToday = current.focusedSecondsToday + cycles * state.pomodoroFocusMinutes * 60,
+                completedPomodoros = current.completedPomodoros + cycles,
+                completedBreaks = current.completedBreaks + cycles)
+            remaining %= cycle
+            effect = ModeTickResult(current, message = if (current.pomodoroPhase == PomodoroPhase.FOCUS) ModeMessage.BREAK_DONE else ModeMessage.FOCUS_DONE,
+                triggerSound = true, edgeLightMode = EdgeLightMode.TIMER_ALERT, edgeLightDurationMs = DEFAULT_TIMER_ALERT_EDGE_MS)
+        }
+        while (remaining > 0) {
+            val consumed = minOf(remaining, current.pomodoroRemainingSeconds.coerceAtLeast(1))
+            val focus = if (current.pomodoroPhase == PomodoroPhase.FOCUS) consumed - 1 else 0
+            val beforeLastSecond = current.copy(
+                pomodoroRemainingSeconds = current.pomodoroRemainingSeconds - consumed + 1,
+                focusedSecondsToday = current.focusedSecondsToday + focus)
+            val tick = advanceModeState(beforeLastSecond)
+            current = tick.state
+            if (tick.message != null) effect = tick
+            remaining -= consumed
+        }
+        return effect.copy(state = current)
+    }
+
     fun shouldTriggerDailyAlarm(
         state: ClockState,
         hour24: Int,
