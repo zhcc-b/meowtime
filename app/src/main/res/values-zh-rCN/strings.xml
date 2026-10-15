@@ -121,4 +121,5 @@
     <string name="alarm_access_title">允许后台闹钟</string>
     <string name="alarm_access_message">请允许闹钟和提醒，以便 meowtime 在息屏后也能准时响铃。</string>
     <string name="alarm_access_open">前往设置</string>
+    <string name="settings_particle_weather_auto_live">自动 · 实时</string>
 </resources>
