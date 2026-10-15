@@ -184,6 +184,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private fun observePersistedSettings() {
         viewModelScope.launch {
             appContext.dataStore.data.collect { preferences ->
+                val canScheduleAlarms = SystemAlarmScheduler.canSchedule(appContext)
                 _uiState.update { state ->
                     val selectedFontName = preferences[PreferenceKeys.selectedFont]
                     val selectedFont = AvailableClockFonts.find { it.name == selectedFontName } ?: state.selectedFont
@@ -219,7 +220,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                         } else {
                             state.countdownRemainingSeconds
                         },
-                        dailyAlarmEnabled = (preferences[PreferenceKeys.dailyAlarmEnabled] ?: state.dailyAlarmEnabled) && SystemAlarmScheduler.canSchedule(appContext),
+                        dailyAlarmEnabled = (preferences[PreferenceKeys.dailyAlarmEnabled] ?: state.dailyAlarmEnabled) && canScheduleAlarms,
                         dailyAlarmHour = preferences[PreferenceKeys.dailyAlarmHour] ?: state.dailyAlarmHour,
                         dailyAlarmMinute = preferences[PreferenceKeys.dailyAlarmMinute] ?: state.dailyAlarmMinute,
                         selectedThemePreset = preset,
