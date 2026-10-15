@@ -996,7 +996,7 @@ private fun LandscapeTemperatureLine(state: ClockState) {
             withStyle(SpanStyle(fontSize = 11.sp * scale, color = LiquidGlassText.copy(alpha = 0.38f))) {
                 append("  ·  ")
             }
-            withStyle(SpanStyle(fontSize = 18.sp * scale, fontWeight = FontWeight.SemiBold, color = LiquidGlassText)) {
+            withStyle(SpanStyle(fontSize = 18.sp * scale, fontWeight = FontWeight.SemiBold, color = temperatureColor(temperature.toDouble()))) {
                 append("${temperature}°C")
             }
         }
@@ -1004,7 +1004,7 @@ private fun LandscapeTemperatureLine(state: ClockState) {
             withStyle(SpanStyle(fontSize = 11.sp * scale, color = LiquidGlassText.copy(alpha = 0.72f))) {
                 append("   体感 ")
             }
-            withStyle(SpanStyle(fontSize = 18.sp * scale, fontWeight = FontWeight.SemiBold, color = LiquidGlassText.copy(alpha = 0.96f))) {
+            withStyle(SpanStyle(fontSize = 18.sp * scale, fontWeight = FontWeight.SemiBold, color = temperatureColor(apparent.toDouble()))) {
                 append("${apparent}°C")
             }
         }
