@@ -54,10 +54,10 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mytime.R
@@ -188,6 +188,7 @@ fun FlipClockScreen(
             state = state,
             onPlayAudio = onPlayAudio,
             onToggleSettings = onOpenSettings,
+            onOpenAlarmSettings = { shouldScrollToAlarmSettings = true; onOpenSettings() },
             onSetClockMode = onSetClockMode,
             onToggleModeRunning = onToggleModeRunning,
             onResetMode = onResetMode,
@@ -199,21 +200,6 @@ fun FlipClockScreen(
             modifier = Modifier.alpha(settingsDim)
         )
 
-        if (state.dailyAlarmEnabled && !state.isSettingsVisible) {
-            DailyAlarmHint(
-                state = state,
-                onClick = {
-                    shouldScrollToAlarmSettings = true
-                    onOpenSettings()
-                },
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(
-                        end = 18.dp,
-                        bottom = if (state.clockMode == ClockMode.CLOCK) 18.dp else 116.dp
-                    )
-            )
-        }
 
         SettingsMenu(
             visible = state.isSettingsVisible,
@@ -451,7 +437,7 @@ internal fun SettingsPanelSurface(
 @Composable
 internal fun SettingsCardSurface(
     modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(24.dp),
+    shape: Shape = RoundedCornerShape(UiMetrics.CardRadius),
     padding: PaddingValues = PaddingValues(0.dp),
     content: @Composable BoxScope.() -> Unit
 ) {
@@ -498,6 +484,7 @@ internal fun SettingsCardSurface(
 internal fun SettingsChip(
     selected: Boolean,
     onClick: () -> Unit,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(16.dp),
     padding: PaddingValues = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
@@ -505,6 +492,7 @@ internal fun SettingsChip(
 ) {
     Box(
         modifier = modifier
+            .heightIn(min = UiMetrics.TouchTarget)
             .clip(shape)
             .clickable(onClick = onClick)
             .background(
@@ -561,7 +549,7 @@ private fun SettingsGearButton(
 ) {
     IconButton(
         onClick = onClick,
-        modifier = modifier.size(44.dp)
+        modifier = modifier.size(UiMetrics.TouchTarget)
     ) {
         Icon(
             imageVector = Icons.Default.Settings,
@@ -743,6 +731,7 @@ private fun ClockContent(
     state: ClockState,
     onPlayAudio: () -> Unit,
     onToggleSettings: () -> Unit,
+    onOpenAlarmSettings: () -> Unit,
     onSetClockMode: (ClockMode) -> Unit,
     onToggleModeRunning: () -> Unit,
     onResetMode: () -> Unit,
@@ -755,15 +744,13 @@ private fun ClockContent(
 ) {
     val configuration = LocalConfiguration.current
     val screenWidth = configuration.screenWidthDp
-    val screenHeight = configuration.screenHeightDp
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val isCompactPortrait = !isLandscape && screenWidth < 430
     val baseFontSize = ((screenWidth / 8).coerceAtLeast(32) * 1.48f) * state.selectedFont.sizeMultiplier
-    val footerFontSize = (screenWidth / 20).coerceIn(16, 24).sp
     val quietLayout = state.activeThemePreset.profile().quietLayout || state.currentHour24 >= 23 || state.currentHour24 < 7
 
     val alpha by animateFloatAsState(
-        targetValue = 0.65f * state.activeThemePreset.profile().dimStrength,
+        targetValue = 0.82f * state.activeThemePreset.profile().dimStrength,
         animationSpec = tween(1000),
         label = "burnInAlpha"
     )
@@ -773,7 +760,7 @@ private fun ClockContent(
             .then(modifier)
             .fillMaxSize()
             .alpha(alpha)
-            .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
+            .padding(horizontal = UiMetrics.ScreenInset, vertical = UiMetrics.ScreenInset)
     ) {
         if (isLandscape) {
             val displayModifier = Modifier
@@ -785,13 +772,14 @@ private fun ClockContent(
                 baseFontSize = baseFontSize,
                 displayModifier = displayModifier,
                 onToggleSettings = onToggleSettings,
+                onOpenAlarmSettings = onOpenAlarmSettings,
                 onSetClockMode = onSetClockMode,
                 onToggleModeRunning = onToggleModeRunning,
                 onResetMode = onResetMode,
                 onSetPomodoroFocus = onSetPomodoroFocus,
                 onSetPomodoroBreak = onSetPomodoroBreak,
                 onSetCountdown = onSetCountdown,
-                    onPlayAudio = onPlayAudio
+                onPlayAudio = onPlayAudio
             )
             return@Box
         }
@@ -803,13 +791,12 @@ private fun ClockContent(
         PortraitClockContent(
             state = state,
             baseFontSize = baseFontSize,
-            footerFontSize = footerFontSize,
             quietLayout = quietLayout,
             isCompactPortrait = isCompactPortrait,
-            screenHeight = screenHeight,
             displayModifier = displayModifier,
             onPlayAudio = onPlayAudio,
             onToggleSettings = onToggleSettings,
+            onOpenAlarmSettings = onOpenAlarmSettings,
             onSetClockMode = onSetClockMode,
             onToggleModeRunning = onToggleModeRunning,
             onResetMode = onResetMode,
@@ -826,20 +813,21 @@ private fun ModeSwitcherRow(
     onSetClockMode: (ClockMode) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    LazyRow(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    Row(
+        modifier = modifier.height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(UiMetrics.SmallGap)
     ) {
-        items(ClockMode.entries.toList()) { mode ->
+        ClockMode.entries.forEach { mode ->
             SettingsChip(
                 selected = state.clockMode == mode,
-                onClick = { onSetClockMode(mode) }
+                onClick = { onSetClockMode(mode) },
+                modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = UiMetrics.TouchTarget),
+                padding = PaddingValues(horizontal = 6.dp, vertical = 10.dp)
             ) {
                 Text(
-                    text = mode.label(),
-                    color = LiquidGlassText,
-                    fontSize = 13.sp,
-                    fontFamily = UiFontFamily
+                    text = mode.label(), color = LiquidGlassText,
+                    fontSize = 12.sp, fontFamily = UiFontFamily,
+                    textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -850,13 +838,12 @@ private fun ModeSwitcherRow(
 private fun PortraitClockContent(
     state: ClockState,
     baseFontSize: Float,
-    footerFontSize: TextUnit,
     quietLayout: Boolean,
     isCompactPortrait: Boolean,
-    screenHeight: Int,
     displayModifier: Modifier,
     onPlayAudio: () -> Unit,
     onToggleSettings: () -> Unit,
+    onOpenAlarmSettings: () -> Unit,
     onSetClockMode: (ClockMode) -> Unit,
     onToggleModeRunning: () -> Unit,
     onResetMode: () -> Unit,
@@ -870,159 +857,110 @@ private fun PortraitClockContent(
         controlsCollapsed = state.clockMode != ClockMode.CLOCK && state.timerRunning
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 2.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top
+    Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(UiMetrics.Gap)
         ) {
-            DateDayBlock(
+            PortraitHeader(state, onToggleSettings)
+
+            ModeSwitcherRow(
                 state = state,
-                footerFontSize = footerFontSize,
-                    modifier = Modifier.weight(1f)
+                onSetClockMode = onSetClockMode,
+                modifier = Modifier.fillMaxWidth()
             )
-            StatusControlCard(
-                batteryLevel = state.batteryLevel,
-                isCharging = state.isCharging,
-                onOpenSettings = onToggleSettings,
-                compact = true
-            )
-        }
 
-        ModeSwitcherRow(
-            state = state,
-            onSetClockMode = onSetClockMode,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = if (quietLayout) 10.dp else 14.dp)
-        )
 
-        Spacer(modifier = Modifier.height(if (isCompactPortrait) 16.dp else 20.dp))
-
-        MainTimeDisplay(
-            state = state,
-            baseSize = portraitMainSize,
-            modifier = displayModifier,
-            showSeconds = false
-        )
-
-        Spacer(modifier = Modifier.height(if (isCompactPortrait) 10.dp else 14.dp))
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = if (isCompactPortrait) 10.dp else 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            PortraitSecondsCard(
+            MainTimeDisplay(
                 state = state,
-                minuteReferenceSize = portraitMainSize,
-                modifier = Modifier.weight(0.34f)
+                baseSize = portraitMainSize,
+                modifier = displayModifier,
+                showSeconds = false
             )
-            ThemePresetPill(
-                label = stringResource(id = R.string.current_preset_label, state.activeThemePreset.label()),
-                modifier = Modifier.weight(0.66f)
-            )
-        }
 
-        if (state.clockMode == ClockMode.CLOCK && state.hourlyForecast.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(12.dp))
-            HourlyForecastCard(
-                state = state,
-                fullWidth = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = if (isCompactPortrait) 10.dp else 16.dp)
-            )
-        }
 
-        if (state.clockMode != ClockMode.CLOCK) {
-            Spacer(modifier = Modifier.height(10.dp))
-            if (controlsCollapsed) {
-                RunningControlOrb(
+            Row(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(UiMetrics.Gap),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                PortraitSecondsCard(
                     state = state,
-                    modifier = Modifier.align(Alignment.CenterHorizontally),
-                    onExpand = { controlsCollapsed = false }
+                    minuteReferenceSize = portraitMainSize,
+                    modifier = Modifier.weight(0.34f).fillMaxHeight()
                 )
-            } else {
-                ModeControlPanel(
-                    state = state,
-                    onToggleModeRunning = onToggleModeRunning,
-                    onResetMode = onResetMode,
-                    onSetPomodoroFocus = onSetPomodoroFocus,
-                    onSetPomodoroBreak = onSetPomodoroBreak,
-                    onSetCountdown = onSetCountdown,
-                    compact = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = if (isCompactPortrait) 10.dp else 16.dp)
+                ThemePresetPill(
+                    label = stringResource(id = R.string.current_preset_label, state.activeThemePreset.label()),
+                    modifier = Modifier.weight(0.66f).fillMaxHeight()
                 )
             }
+
+            if (state.clockMode == ClockMode.CLOCK && state.hourlyForecast.isNotEmpty()) {
+                HourlyForecastCard(
+                    state = state,
+                    fullWidth = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            if (state.clockMode != ClockMode.CLOCK) {
+                Spacer(modifier = Modifier.height(10.dp))
+                if (controlsCollapsed) {
+                    RunningControlOrb(
+                        state = state,
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                        onExpand = { controlsCollapsed = false }
+                    )
+                } else {
+                    ModeControlPanel(
+                        state = state,
+                        onToggleModeRunning = onToggleModeRunning,
+                        onResetMode = onResetMode,
+                        onSetPomodoroFocus = onSetPomodoroFocus,
+                        onSetPomodoroBreak = onSetPomodoroBreak,
+                        onSetCountdown = onSetCountdown,
+                        compact = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+
+            CompanionStatusCard(
+                state = state,
+                quietLayout = quietLayout,
+                compact = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(Modifier.height(UiMetrics.SmallGap))
         }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        CompanionStatusCard(
-            state = state,
-            quietLayout = quietLayout,
-            compact = true,
-            modifier = Modifier
-                .fillMaxWidth(0.72f)
-        )
-
-        Spacer(modifier = Modifier.weight(if (screenHeight < 760) 0.22f else 0.38f))
-
-        if (state.isSoundButtonVisible) {
-            AudioButton(onPlayAudio, modifier = Modifier.padding(bottom = 18.dp))
-            Spacer(modifier = Modifier.height(4.dp))
+        // Reserve a separate footer for audio; the cat keeps the centre of the screen.
+        Box(Modifier.fillMaxWidth().height(72.dp), contentAlignment = Alignment.BottomStart) {
+            if (state.isSoundButtonVisible) AudioButton(onPlayAudio, Modifier)
+            if (state.dailyAlarmEnabled) DailyAlarmHint(state, onOpenAlarmSettings, Modifier.align(Alignment.BottomEnd))
         }
     }
 }
 
 @Composable
-private fun DateDayBlock(state: ClockState, footerFontSize: TextUnit, modifier: Modifier = Modifier) {
-    SettingsCardSurface(
-        shape = RoundedCornerShape(26.dp),
-        padding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
-        modifier = modifier
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                text = state.dayOfWeek,
-                color = LiquidGlassText.copy(alpha = 0.92f),
-                fontSize = (footerFontSize.value + 6).sp,
-                fontFamily = UiFontFamily,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                text = state.date,
-                color = LiquidGlassText.copy(alpha = 0.68f),
-                fontSize = footerFontSize,
-                fontFamily = UiFontFamily
-            )
-            Text(
-                text = state.location,
-                color = LiquidGlassText.copy(alpha = 0.52f),
-                fontSize = (footerFontSize.value * 0.72f).sp,
-                fontFamily = UiFontFamily,
-                letterSpacing = 1.sp,
-                maxLines = 1
-            )
-            state.temperatureLabel()?.let { temperature ->
-                Text(
-                    text = temperature,
-                    color = LiquidGlassText.copy(alpha = 0.9f),
-                    fontSize = (footerFontSize.value * 0.88f).sp,
-                    fontFamily = UiFontFamily,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1
-                )
+private fun PortraitHeader(state: ClockState, onOpenSettings: () -> Unit) {
+    SettingsCardSurface(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(UiMetrics.CardInset)) {
+        Column(verticalArrangement = Arrangement.spacedBy(UiMetrics.Gap)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(UiMetrics.Gap)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(state.dayOfWeek, color = LiquidGlassText, fontFamily = UiFontFamily, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                    Text(state.date, color = LiquidGlassText.copy(alpha = 0.72f), fontFamily = UiFontFamily, fontSize = 12.sp)
+                }
+                BatteryIndicator(state.batteryLevel, state.isCharging, compact = true)
+                SettingsGearButton(onOpenSettings)
+            }
+            HorizontalDivider(color = Color.White.copy(alpha = 0.10f))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(UiMetrics.Gap), verticalAlignment = Alignment.CenterVertically) {
+                Text(state.location, modifier = Modifier.weight(1f), color = LiquidGlassText.copy(alpha = 0.82f), fontFamily = UiFontFamily, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                state.temperatureLabel()?.let {
+                    Text(it, color = LiquidGlassText, fontFamily = UiFontFamily, fontSize = 13.sp, maxLines = 1)
+                }
             }
         }
     }
@@ -1031,9 +969,9 @@ private fun DateDayBlock(state: ClockState, footerFontSize: TextUnit, modifier: 
 @Composable
 private fun LandscapeDateLocationBlock(state: ClockState, modifier: Modifier = Modifier) {
     SettingsCardSurface(
-        shape = RoundedCornerShape(26.dp),
+        shape = RoundedCornerShape(UiMetrics.CardRadius),
         padding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
-        modifier = modifier.widthIn(min = 190.dp, max = 330.dp)
+        modifier = modifier
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -1152,11 +1090,12 @@ private fun PortraitSecondsCard(
 ) {
     val display = remember(state) { state.timerDisplay() }
     SettingsCardSurface(
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(UiMetrics.CardRadius),
         padding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
         modifier = modifier
     ) {
         Column(
+            modifier = Modifier.align(Alignment.Center),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
@@ -1169,7 +1108,7 @@ private fun PortraitSecondsCard(
             FlipDigit(
                 value = display.second,
                 font = state.selectedFont,
-                fontSize = (minuteReferenceSize * 0.8f) * state.selectedFont.secondsScale,
+                fontSize = (minuteReferenceSize * 0.45f) * state.selectedFont.secondsScale,
                 compact = true
             )
         }
@@ -1182,6 +1121,7 @@ private fun LandscapeClockContent(
     baseFontSize: Float,
     displayModifier: Modifier,
     onToggleSettings: () -> Unit,
+    onOpenAlarmSettings: () -> Unit,
     onSetClockMode: (ClockMode) -> Unit,
     onToggleModeRunning: () -> Unit,
     onResetMode: () -> Unit,
@@ -1229,83 +1169,40 @@ private fun LandscapeClockContent(
                 )
             }
     ) {
-        StatusControlCard(
-            batteryLevel = state.batteryLevel,
-            isCharging = state.isCharging,
-            onOpenSettings = onToggleSettings,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 2.dp, end = 2.dp)
-        )
-
-        LandscapeDateLocationBlock(
-            state = state,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(top = 2.dp, start = 2.dp)
-        )
-
-        MainTimeDisplay(
-            state = state,
-            baseSize = baseFontSize * 1.30f,
-            modifier = displayModifier
-                .align(Alignment.Center)
-                .padding(start = 34.dp, end = 34.dp, bottom = 22.dp)
-        )
-
-        LandscapeModeFooter(
-            modes = ClockMode.entries.toList(),
-            currentMode = state.clockMode,
-            label = transientModeLabel ?: stringResource(id = R.string.current_preset_compact, state.activeThemePreset.label()),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 18.dp)
-        )
-
-        if (state.clockMode == ClockMode.CLOCK && state.hourlyForecast.isNotEmpty()) {
-            HourlyForecastCard(
-                state = state,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    // The daily alarm card occupies the lower-right corner. Keep the
-                    // forecast on the same baseline and slide it left to avoid overlap.
-                    .padding(end = if (state.dailyAlarmEnabled) 124.dp else 8.dp, bottom = 18.dp)
-            )
-        }
-
-        if (state.clockMode != ClockMode.CLOCK) {
-            if (controlsCollapsed) {
-                RunningControlOrb(
-                    state = state,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 18.dp, bottom = 18.dp),
-                    onExpand = { controlsCollapsed = false }
-                )
-            } else {
-                ModeControlPanel(
-                    state = state,
-                    onToggleModeRunning = onToggleModeRunning,
-                    onResetMode = onResetMode,
-                    onSetPomodoroFocus = onSetPomodoroFocus,
-                    onSetPomodoroBreak = onSetPomodoroBreak,
-                    onSetCountdown = onSetCountdown,
-                    compact = true,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 18.dp, bottom = 18.dp)
-                        .widthIn(max = 276.dp)
-                )
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(UiMetrics.Gap)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(UiMetrics.Gap), verticalAlignment = Alignment.Top) {
+                LandscapeDateLocationBlock(state, Modifier.widthIn(max = 340.dp))
+                Spacer(Modifier.weight(1f))
+                if (state.dailyAlarmEnabled) DailyAlarmHint(state, onOpenAlarmSettings)
+                StatusControlCard(state.batteryLevel, state.isCharging, onToggleSettings, compact = true)
             }
-        }
-
-        if (state.isSoundButtonVisible) {
-            AudioButton(
-                onPlayAudio,
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = 10.dp)
-            )
+            Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(UiMetrics.Gap)) {
+                Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                    MainTimeDisplay(state, baseFontSize * 1.30f, displayModifier.fillMaxWidth())
+                }
+                if (state.clockMode != ClockMode.CLOCK && !controlsCollapsed) {
+                    Box(Modifier.width(260.dp).fillMaxHeight().clip(RoundedCornerShape(UiMetrics.CardRadius)).verticalScroll(rememberScrollState())) {
+                        ModeControlPanel(state, onToggleModeRunning, onResetMode, onSetPomodoroFocus, onSetPomodoroBreak, onSetCountdown,
+                            compact = true, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(UiMetrics.Gap), verticalAlignment = Alignment.Bottom) {
+                Box(Modifier.weight(1f)) {
+                    if (state.isSoundButtonVisible) AudioButton(onPlayAudio, Modifier)
+                }
+                LandscapeModeFooter(
+                    modes = ClockMode.entries.toList(), currentMode = state.clockMode,
+                    label = transientModeLabel ?: stringResource(id = R.string.current_preset_compact, state.activeThemePreset.label())
+                )
+                Box(Modifier.weight(1f), contentAlignment = Alignment.BottomEnd) {
+                    if (state.clockMode == ClockMode.CLOCK && state.hourlyForecast.isNotEmpty()) {
+                        HourlyForecastCard(state, modifier = Modifier.widthIn(max = 230.dp))
+                    } else if (state.clockMode != ClockMode.CLOCK && controlsCollapsed) {
+                        RunningControlOrb(state, onExpand = { controlsCollapsed = false })
+                    }
+                }
+            }
         }
     }
 }
@@ -1317,7 +1214,7 @@ private fun HourlyForecastCard(
     fullWidth: Boolean = false
 ) {
     SettingsCardSurface(
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(UiMetrics.CardRadius),
         padding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
         // Landscape forecasts should hug their two short text rows instead of reserving
         // a fixed empty area on the right. Portrait deliberately uses the full row.
@@ -1394,7 +1291,7 @@ private fun LandscapeModeFooter(
 @Composable
 private fun ThemePresetPill(label: String, modifier: Modifier = Modifier) {
     SettingsCardSurface(
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(UiMetrics.CardRadius),
         padding = PaddingValues(horizontal = 14.dp, vertical = 7.dp),
         modifier = modifier
     ) {
@@ -1402,7 +1299,8 @@ private fun ThemePresetPill(label: String, modifier: Modifier = Modifier) {
             text = label,
             color = LiquidGlassText.copy(alpha = 0.82f),
             fontFamily = UiFontFamily,
-            fontSize = 11.sp
+            fontSize = 12.sp,
+            modifier = Modifier.align(Alignment.CenterStart)
         )
     }
 }
@@ -2116,14 +2014,14 @@ private fun CompanionStatusCard(
     modifier: Modifier = Modifier
 ) {
     SettingsCardSurface(
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(UiMetrics.CardRadius),
         padding = PaddingValues(
             horizontal = if (compact) 14.dp else 16.dp,
             vertical = if (compact) 10.dp else 12.dp
         ),
         modifier = modifier
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp)) {
+        Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start, verticalArrangement = Arrangement.spacedBy(UiMetrics.SmallGap)) {
             Text(
                 text = state.companionMessage.ifBlank { state.defaultCompanionMessage() },
                 color = LiquidGlassText.copy(alpha = 0.9f),
@@ -2156,15 +2054,19 @@ private fun MainTimeDisplay(
 ) {
     val display = remember(state) { state.timerDisplay() }
     BoxWithConstraints(modifier = modifier) {
-        val availableWidth = maxWidth.value
-        val widthFactor = (if (showSeconds) 4.95f else 4.18f) * state.selectedFont.widthFitMultiplier
-        val fittedBaseSize = ((availableWidth - 12f) / widthFactor).coerceAtLeast(34f)
-        val resolvedBaseSize = minOf(baseSize, fittedBaseSize)
+        val fontScale = LocalDensity.current.fontScale
+        val gap = if (showSeconds) 12.dp else 8.dp
         val secondsScale = state.selectedFont.secondsScale
+        val widthFactor = 1.86f * 2 + 0.40f + if (showSeconds) 0.28f * secondsScale * 1.84f else 0f
+        val gaps = if (showSeconds) 3 else 2
+        val fittedWidth = ((maxWidth.value - gap.value * gaps) / (widthFactor * fontScale)).coerceAtLeast(1f)
+        val fittedHeight = if (maxHeight.value.isFinite()) ((maxHeight.value - 2f) / (1.12f * fontScale)).coerceAtLeast(1f) else baseSize
+        val resolvedBaseSize = minOf(baseSize, fittedWidth, fittedHeight)
+        val colonWidth = with(LocalDensity.current) { (resolvedBaseSize * 0.40f).sp.toDp() }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
             FlipDigit(display.hour, state.selectedFont, resolvedBaseSize)
-            Text(":", color = LiquidGlassText.copy(alpha = 0.84f), fontSize = (resolvedBaseSize * 0.78f).sp, fontWeight = FontWeight.Light)
+            Text(":", modifier = Modifier.width(colonWidth), textAlign = TextAlign.Center, color = LiquidGlassText.copy(alpha = 0.84f), fontSize = (resolvedBaseSize * 0.78f).sp, fontWeight = FontWeight.Light)
             FlipDigit(display.minute, state.selectedFont, resolvedBaseSize)
             if (showSeconds) {
                 Column(

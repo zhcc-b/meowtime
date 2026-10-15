@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -27,6 +29,11 @@ import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -94,121 +101,128 @@ internal fun SettingsMenu(
                 onAlarmSettingsScrollHandled()
             }
         }
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xFF06111D).copy(alpha = 0.58f))
-        ) {
-            val drawerWidth = (maxWidth * 0.88f).coerceAtMost(348.dp)
-            Row(modifier = Modifier.fillMaxSize()) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .clickable { onClose() }
-                )
-                SettingsPanelSurface(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .width(drawerWidth),
-                    shape = RoundedCornerShape(topStart = 34.dp, bottomStart = 34.dp),
-                    padding = PaddingValues(horizontal = 22.dp, vertical = 24.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.verticalScroll(scrollState),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
+        ProvideTextStyle(MaterialTheme.typography.bodyMedium.copy(fontFamily = UiFontFamily)) {
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF06111D).copy(alpha = 0.58f))
+            ) {
+                val drawerWidth = (maxWidth * 0.92f).coerceAtMost(400.dp)
+                Row(modifier = Modifier.fillMaxSize()) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clickable { onClose() }
+                    )
+                    SettingsPanelSurface(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(drawerWidth),
+                        shape = RoundedCornerShape(topStart = 34.dp, bottomStart = 34.dp),
+                        padding = PaddingValues(UiMetrics.ScreenInset)
                     ) {
-                        Text(
-                            stringResource(id = R.string.settings_title),
-                            color = LiquidGlassText,
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = stringResource(id = R.string.settings_subtitle),
-                            color = LiquidGlassText.copy(alpha = 0.54f),
-                            fontSize = 12.sp,
-                            letterSpacing = 1.sp
-                        )
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
-                        SettingToggle(stringResource(id = R.string.settings_gyroscope), state.isParallaxEnabled, onToggleParallax)
-                        ParticleWeatherSelector(
-                            isAuto = state.isParticleWeatherAuto,
-                            hasRealWeather = state.realWeather != null,
-                            selected = state.particleWeather,
-                            onToggleAuto = onToggleParticleWeatherAuto,
-                            onSelectWeather = onSelectParticleWeather
-                        )
-                        TextButton(onClick = onRetryLocation, enabled = !state.isLocationRefreshing) {
-                            Text(stringResource(when {
-                                state.isLocationRefreshing -> R.string.location_loading
-                                state.temperatureCelsius == null || state.weatherRefreshFailed -> R.string.location_retry
-                                else -> R.string.weather_refresh
-                            }))
-                        }
-                        SettingToggle(stringResource(id = R.string.settings_cats), state.isCatSystemEnabled, onToggleCats)
-                        SettingToggle(stringResource(id = R.string.settings_24_hour), state.is24HourFormat, onToggle24HourFormat)
-                        SleepSoundSelector(
-                            selected = state.sleepSoundMode,
-                            enabled = state.whiteNoiseEnabled,
-                            remainingSeconds = state.sleepSoundRemainingSeconds,
-                            onEnabledChange = onToggleWhiteNoise,
-                            onSelect = onSelectSleepSound
-                        )
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
-                        ThemePresetSelector(
-                            selected = state.selectedThemePreset,
-                            active = state.activeThemePreset,
-                            onSelect = onSetThemePreset
-                        )
-                        DailyAlarmCard(
-                            enabled = state.dailyAlarmEnabled,
-                            hour = state.dailyAlarmHour,
-                            minute = state.dailyAlarmMinute,
-                            onEnabledChange = onToggleDailyAlarm,
-                            onSetHour = onSetDailyAlarmHour,
-                            onSetMinute = onSetDailyAlarmMinute
-                        )
-                        SettingsCardSurface(
-                            shape = RoundedCornerShape(24.dp),
-                            padding = PaddingValues(16.dp)
+                        Column(
+                            modifier = Modifier.verticalScroll(scrollState),
+                            verticalArrangement = Arrangement.spacedBy(UiMetrics.Gap)
                         ) {
-                            Column {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    stringResource(id = R.string.settings_clock_font),
-                                    color = LiquidGlassText.copy(alpha = 0.68f),
-                                    fontSize = 13.sp
+                                    stringResource(id = R.string.settings_title),
+                                    modifier = Modifier.weight(1f), color = LiquidGlassText,
+                                    fontSize = 24.sp, fontWeight = FontWeight.SemiBold
                                 )
-                                Spacer(modifier = Modifier.height(12.dp))
-                                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    items(state.allFonts) { fontItem ->
-                                        val isSelected = fontItem.name == state.selectedFont.name
-                                        SettingsChip(
-                                            selected = isSelected,
-                                            onClick = { onSelectFont(fontItem) }
-                                        ) {
-                                            Text(
-                                                text = fontItem.name,
-                                                color = if (isSelected) LiquidGlassText else LiquidGlassText.copy(alpha = 0.62f),
-                                                fontFamily = fontItem.family,
-                                                fontSize = 14.sp
-                                            )
+                                TextButton(onClick = onClose, modifier = Modifier.heightIn(min = UiMetrics.TouchTarget)) {
+                                    Text(stringResource(R.string.settings_done), color = LiquidGlassText)
+                                }
+                            }
+                            Text(
+                                text = stringResource(id = R.string.settings_subtitle),
+                                color = LiquidGlassText.copy(alpha = 0.54f),
+                                fontSize = 12.sp,
+                                letterSpacing = 1.sp
+                            )
+                            HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+                            SettingToggle(stringResource(id = R.string.settings_gyroscope), state.isParallaxEnabled, onToggleParallax)
+                            ParticleWeatherSelector(
+                                isAuto = state.isParticleWeatherAuto,
+                                hasRealWeather = state.realWeather != null,
+                                selected = state.particleWeather,
+                                onToggleAuto = onToggleParticleWeatherAuto,
+                                onSelectWeather = onSelectParticleWeather,
+                                refreshing = state.isLocationRefreshing,
+                                refreshLabel = stringResource(when {
+                                    state.isLocationRefreshing -> R.string.location_loading
+                                    state.temperatureCelsius == null || state.weatherRefreshFailed -> R.string.location_retry
+                                    else -> R.string.weather_refresh
+                                }),
+                                onRefresh = onRetryLocation
+                            )
+                            SettingToggle(stringResource(id = R.string.settings_cats), state.isCatSystemEnabled, onToggleCats)
+                            SettingToggle(stringResource(id = R.string.settings_24_hour), state.is24HourFormat, onToggle24HourFormat)
+                            SleepSoundSelector(
+                                selected = state.sleepSoundMode,
+                                enabled = state.whiteNoiseEnabled,
+                                remainingSeconds = state.sleepSoundRemainingSeconds,
+                                onEnabledChange = onToggleWhiteNoise,
+                                onSelect = onSelectSleepSound
+                            )
+                            HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+                            ThemePresetSelector(
+                                selected = state.selectedThemePreset,
+                                active = state.activeThemePreset,
+                                onSelect = onSetThemePreset
+                            )
+                            DailyAlarmCard(
+                                enabled = state.dailyAlarmEnabled,
+                                hour = state.dailyAlarmHour,
+                                minute = state.dailyAlarmMinute,
+                                onEnabledChange = onToggleDailyAlarm,
+                                onSetHour = onSetDailyAlarmHour,
+                                onSetMinute = onSetDailyAlarmMinute
+                            )
+                            SettingsCardSurface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(UiMetrics.CardRadius),
+                                padding = PaddingValues(UiMetrics.CardInset)
+                            ) {
+                                Column {
+                                    Text(
+                                        stringResource(id = R.string.settings_clock_font),
+                                        color = LiquidGlassText.copy(alpha = 0.68f),
+                                        fontSize = 14.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        items(state.allFonts) { fontItem ->
+                                            val isSelected = fontItem.name == state.selectedFont.name
+                                            SettingsChip(
+                                                selected = isSelected,
+                                                onClick = { onSelectFont(fontItem) }
+                                            ) {
+                                                Text(
+                                                    text = fontItem.name,
+                                                    color = if (isSelected) LiquidGlassText else LiquidGlassText.copy(alpha = 0.62f),
+                                                    fontFamily = fontItem.family,
+                                                    fontSize = 14.sp
+                                                )
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        SettingsChip(
-                            selected = true,
-                            onClick = onClose,
-                            modifier = Modifier.align(Alignment.End)
-                        ) {
-                            Text(
-                                stringResource(id = R.string.settings_done),
-                                color = LiquidGlassText,
-                                fontWeight = FontWeight.Medium
-                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            SettingsChip(
+                                selected = true,
+                                onClick = onClose,
+                                modifier = Modifier.align(Alignment.End)
+                            ) {
+                                Text(
+                                    stringResource(id = R.string.settings_done),
+                                    color = LiquidGlassText,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
                         }
                     }
                 }
@@ -223,18 +237,36 @@ private fun ParticleWeatherSelector(
     hasRealWeather: Boolean,
     selected: ParticleWeather,
     onToggleAuto: (Boolean) -> Unit,
-    onSelectWeather: (ParticleWeather) -> Unit
+    onSelectWeather: (ParticleWeather) -> Unit,
+    refreshing: Boolean,
+    refreshLabel: String,
+    onRefresh: () -> Unit
 ) {
     SettingsCardSurface(
-        shape = RoundedCornerShape(24.dp),
-        padding = PaddingValues(16.dp)
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(UiMetrics.CardRadius),
+        padding = PaddingValues(UiMetrics.CardInset)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                stringResource(id = R.string.settings_particle_weather),
-                color = LiquidGlassText.copy(alpha = 0.68f),
-                fontSize = 13.sp
-            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(UiMetrics.Gap), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(id = R.string.settings_particle_weather),
+                    modifier = Modifier.weight(1f),
+                    color = LiquidGlassText.copy(alpha = 0.68f),
+                    fontSize = 14.sp
+                )
+                SettingsChip(
+                    selected = false,
+                    enabled = !refreshing,
+                    onClick = onRefresh,
+                    padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp), tint = LiquidGlassText.copy(alpha = if (refreshing) 0.42f else 0.82f))
+                        Text(refreshLabel, color = LiquidGlassText.copy(alpha = if (refreshing) 0.42f else 0.88f), fontSize = 12.sp)
+                    }
+                }
+            }
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
                     val isSelected = isAuto
@@ -282,8 +314,9 @@ private fun SleepSoundSelector(
     onSelect: (SleepSoundMode) -> Unit
 ) {
     SettingsCardSurface(
-        shape = RoundedCornerShape(24.dp),
-        padding = PaddingValues(16.dp)
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(UiMetrics.CardRadius),
+        padding = PaddingValues(UiMetrics.CardInset)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
@@ -293,8 +326,9 @@ private fun SleepSoundSelector(
             ) {
                 Text(
                     stringResource(id = R.string.settings_sleep_sound_type),
+                    modifier = Modifier.weight(1f).padding(end = UiMetrics.Gap),
                     color = LiquidGlassText.copy(alpha = 0.88f),
-                    fontSize = 16.sp
+                    fontSize = 14.sp
                 )
                 Switch(
                     checked = enabled,
@@ -309,7 +343,7 @@ private fun SleepSoundSelector(
                     stringResource(id = R.string.settings_sleep_sound_hint)
                 },
                 color = LiquidGlassText.copy(alpha = 0.52f),
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 fontFamily = UiFontFamily
             )
             Text(
@@ -345,19 +379,20 @@ private fun ThemePresetSelector(
     onSelect: (ThemePreset) -> Unit
 ) {
     SettingsCardSurface(
-        shape = RoundedCornerShape(24.dp),
-        padding = PaddingValues(16.dp)
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(UiMetrics.CardRadius),
+        padding = PaddingValues(UiMetrics.CardInset)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
                 stringResource(id = R.string.settings_theme_preset),
                 color = LiquidGlassText.copy(alpha = 0.68f),
-                fontSize = 13.sp
+                fontSize = 14.sp
             )
             Text(
                 text = stringResource(id = R.string.settings_theme_active, active.label()),
                 color = LiquidGlassText.copy(alpha = 0.50f),
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 fontFamily = UiFontFamily
             )
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -386,8 +421,9 @@ private fun DailyAlarmCard(
     onSetMinute: (Int) -> Unit
 ) {
     SettingsCardSurface(
-        shape = RoundedCornerShape(24.dp),
-        padding = PaddingValues(16.dp)
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(UiMetrics.CardRadius),
+        padding = PaddingValues(UiMetrics.CardInset)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
@@ -395,16 +431,16 @@ private fun DailyAlarmCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Column(modifier = Modifier.weight(1f).padding(end = UiMetrics.Gap), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
                         stringResource(id = R.string.settings_daily_alarm),
                         color = LiquidGlassText.copy(alpha = 0.88f),
-                        fontSize = 16.sp
+                        fontSize = 14.sp
                     )
                     Text(
                         text = "%02d:%02d".format(hour, minute),
                         color = LiquidGlassText.copy(alpha = 0.50f),
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         fontFamily = UiFontFamily
                     )
                 }
@@ -582,15 +618,16 @@ private fun ParticleWeather.label(): String {
 @Composable
 private fun SettingToggle(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     SettingsCardSurface(
-        shape = RoundedCornerShape(22.dp),
-        padding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(UiMetrics.CardRadius),
+        padding = PaddingValues(UiMetrics.CardInset)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(title, color = LiquidGlassText.copy(alpha = 0.88f), fontSize = 16.sp)
+            Text(title, modifier = Modifier.weight(1f).padding(end = UiMetrics.Gap), color = LiquidGlassText.copy(alpha = 0.88f), fontSize = 14.sp)
             Switch(
                 checked = checked,
                 onCheckedChange = onCheckedChange,
