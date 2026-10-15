@@ -84,7 +84,7 @@ internal class CatOverlayView(context: Context) : FrameLayout(context) {
         }
         textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
             override fun onSurfaceTextureAvailable(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
-                renderSurface?.release()
+                releaseRenderSurface()
                 renderSurface = Surface(surfaceTexture)
                 renderer.attachSurface(renderSurface!!, width, height)
             }
@@ -94,11 +94,7 @@ internal class CatOverlayView(context: Context) : FrameLayout(context) {
             }
 
             override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
-                renderSurface?.let { surface ->
-                    renderer.detachSurface(surface)
-                    surface.release()
-                }
-                renderSurface = null
+                releaseRenderSurface()
                 return true
             }
 
@@ -123,7 +119,7 @@ internal class CatOverlayView(context: Context) : FrameLayout(context) {
         renderer.setCatsEnabled(enabled)
         visibility = if (enabled) VISIBLE else GONE
         if (isAttached) {
-            if (enabled) startLoop() else stopLoop()
+            if (enabled && windowVisibility == VISIBLE) startLoop() else stopLoop()
         }
     }
 
@@ -159,7 +155,7 @@ internal class CatOverlayView(context: Context) : FrameLayout(context) {
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         isAttached = true
-        if (isEnabledCats) {
+        if (isEnabledCats && windowVisibility == VISIBLE) {
             startLoop()
         }
     }
@@ -167,13 +163,22 @@ internal class CatOverlayView(context: Context) : FrameLayout(context) {
     override fun onDetachedFromWindow() {
         isAttached = false
         stopLoop()
-        renderSurface?.let { surface ->
-            renderer.detachSurface(surface)
-            surface.release()
-        }
-        renderSurface = null
+        releaseRenderSurface()
         renderer.destroy()
         super.onDetachedFromWindow()
+    }
+
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        if (!isAttached) return
+        if (visibility == VISIBLE && isEnabledCats) startLoop() else stopLoop()
+    }
+
+    private fun releaseRenderSurface() {
+        val surface = renderSurface ?: return
+        renderer.detachSurface(surface)
+        surface.release()
+        renderSurface = null
     }
 
     private fun registerClockReceiver() {

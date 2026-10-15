@@ -5,6 +5,7 @@ import android.graphics.PointF
 import android.graphics.RectF
 import android.opengl.Matrix
 import android.view.Surface
+import androidx.annotation.MainThread
 import com.example.mytime.ui.ParticleWeather
 import com.example.mytime.ui.ThemePreset
 import com.google.android.filament.Camera
@@ -35,6 +36,7 @@ import kotlin.math.min
 import kotlin.math.sin
 import kotlin.random.Random
 
+/** Filament engine and window operations are owned by the Android main thread. */
 internal class CatRenderer(private val context: Context) {
     private val lock = Any()
     // Keep the idle scene cheap on older phones; active cat actions render at ~23fps.
@@ -283,6 +285,7 @@ internal class CatRenderer(private val context: Context) {
         initializeCatPositionsIfNeeded()
     }
 
+    @MainThread
     fun render(frameTimeNanos: Long) {
         ensureEngine()
         val eng = engine ?: return
@@ -309,6 +312,7 @@ internal class CatRenderer(private val context: Context) {
         }
     }
 
+    @MainThread
     fun attachSurface(surface: Surface, width: Int, height: Int) {
         synchronized(lock) {
             pendingSurface = surface
@@ -324,12 +328,22 @@ internal class CatRenderer(private val context: Context) {
         }
     }
 
+    @MainThread
     fun detachSurface(surface: Surface) {
         synchronized(lock) {
-            if (pendingSurface === surface) {
-                pendingSurface = null
-            }
+            if (pendingSurface === surface) pendingSurface = null
         }
+        if (outputSurface !== surface) return
+        val eng = engine
+        swapChain?.let { chain ->
+            checkNotNull(eng).destroySwapChain(chain)
+            // Android can release the native window as soon as this callback returns.
+            // Flushing here, rather than on the next frame, completes its ownership transfer.
+            eng.flushAndWait()
+        }
+        swapChain = null
+        outputSurface = null
+        lastFrameNs = 0L
     }
 
     fun setForbiddenRect(rect: RectF) {
@@ -936,6 +950,7 @@ internal class CatRenderer(private val context: Context) {
         }
 
         if (nextWidth > 0 && nextHeight > 0 && (nextWidth != widthPx || nextHeight != heightPx)) {
+            if (swapChain != null) eng.flushAndWait()
             updateCameraProjection(nextWidth, nextHeight)
         }
 
@@ -974,6 +989,7 @@ internal class CatRenderer(private val context: Context) {
         }
     }
 
+    @MainThread
     fun destroy() {
         val eng = engine ?: return
         val scn = scene
