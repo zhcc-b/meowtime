@@ -50,6 +50,9 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -968,16 +971,58 @@ private fun PortraitHeader(state: ClockState, onOpenSettings: () -> Unit) {
 
 @Composable
 private fun LandscapeDateLocationBlock(state: ClockState, modifier: Modifier = Modifier) {
-    val locationAndWeather = listOfNotNull(state.location, state.temperatureLabel()).joinToString(" · ")
     SettingsCardSurface(
         shape = RoundedCornerShape(18.dp),
         padding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
         modifier = modifier
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            LandscapeHeaderLine(locationAndWeather, fontSize = 14.sp, alpha = 0.94f)
-            LandscapeHeaderLine("${state.date} · ${state.dayOfWeek}", fontSize = 12.sp, alpha = 0.76f)
+            LandscapeTemperatureLine(state)
+            LandscapeHeaderLine("${state.date} · ${state.dayOfWeek}", fontSize = 12.sp, alpha = 0.64f)
         }
+    }
+}
+
+/** Weather is the primary information; location remains a quiet contextual label. */
+@Composable
+private fun LandscapeTemperatureLine(state: ClockState) {
+    val temperature = state.temperatureCelsius?.roundToInt()
+    val apparent = state.apparentTemperatureCelsius?.roundToInt()
+    fun label(scale: Float): AnnotatedString = buildAnnotatedString {
+        withStyle(SpanStyle(fontSize = 11.sp * scale, color = LiquidGlassText.copy(alpha = 0.56f))) {
+            append(state.location)
+        }
+        if (temperature != null) {
+            withStyle(SpanStyle(fontSize = 11.sp * scale, color = LiquidGlassText.copy(alpha = 0.38f))) {
+                append("  ·  ")
+            }
+            withStyle(SpanStyle(fontSize = 18.sp * scale, fontWeight = FontWeight.SemiBold, color = LiquidGlassText)) {
+                append("${temperature}°C")
+            }
+        }
+        if (apparent != null) {
+            withStyle(SpanStyle(fontSize = 11.sp * scale, color = LiquidGlassText.copy(alpha = 0.72f))) {
+                append("   体感 ")
+            }
+            withStyle(SpanStyle(fontSize = 18.sp * scale, fontWeight = FontWeight.SemiBold, color = LiquidGlassText.copy(alpha = 0.96f))) {
+                append("${apparent}°C")
+            }
+        }
+    }
+    val measurer = rememberTextMeasurer()
+    BoxWithConstraints {
+        val style = TextStyle(fontFamily = UiFontFamily, fontSize = 14.sp)
+        val measuredWidth = measurer.measure(label(1f), style, softWrap = false, maxLines = 1).size.width
+        val availableWidth = with(LocalDensity.current) { maxWidth.toPx() }
+        val fit = if (measuredWidth > 0) (availableWidth / measuredWidth).coerceAtMost(1f) else 1f
+        Text(
+            text = label(fit),
+            fontFamily = UiFontFamily,
+            fontSize = 14.sp * fit,
+            lineHeight = 22.sp * fit,
+            maxLines = 1,
+            softWrap = false
+        )
     }
 }
 
