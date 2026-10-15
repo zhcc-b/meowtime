@@ -38,6 +38,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -90,6 +91,9 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private var loudnessEnhancer: LoudnessEnhancer? = null
     private val whiteNoisePlayer = WhiteNoisePlayer()
     private val alarmTonePlayer = AlarmTonePlayer()
+    private var alarmPlaybackJob: Job? = null
+    private var sleepPlaybackJob: Job? = null
+    private var playingSleepMode: SleepSoundMode? = null
     private val appContext: Context
         get() = getApplication<Application>().applicationContext
     private val sensorManager = application.applicationContext.getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -212,7 +216,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                     if (sleepSoundEndsAtElapsedMs == 0L) {
                         sleepSoundEndsAtElapsedMs = SystemClock.elapsedRealtime() + SLEEP_SOUND_DURATION_MS
                     }
-                    whiteNoisePlayer.start(soundState.sleepSoundMode)
+                    startSleepPlayback(soundState.sleepSoundMode)
                     startSleepSoundCountdown()
                 } else {
                     stopSleepSound(clearPersistedState = false)
@@ -569,9 +573,38 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         )
     }
 
+    private fun startAlarmPlayback() {
+        if (alarmPlaybackJob?.isActive == true) return
+        val previous = alarmPlaybackJob
+        alarmPlaybackJob = viewModelScope.launch {
+            previous?.cancelAndJoin()
+            alarmTonePlayer.play()
+        }
+    }
+
+    private fun stopAlarmPlayback() {
+        alarmPlaybackJob?.cancel()
+    }
+
+    private fun startSleepPlayback(mode: SleepSoundMode) {
+        if (sleepPlaybackJob?.isActive == true && playingSleepMode == mode) return
+        val previous = sleepPlaybackJob
+        previous?.cancel()
+        playingSleepMode = mode
+        sleepPlaybackJob = viewModelScope.launch {
+            previous?.cancelAndJoin()
+            whiteNoisePlayer.play(mode)
+        }
+    }
+
+    private fun stopSleepPlayback() {
+        sleepPlaybackJob?.cancel()
+        playingSleepMode = null
+    }
+
     private fun startDailyAlarm() {
         dailyAlarmJob?.cancel()
-        alarmTonePlayer.start()
+        startAlarmPlayback()
         showEdgeLight(EdgeLightMode.TIMER_ALERT, DAILY_ALARM_RING_MS)
         _uiState.update {
             it.copy(
@@ -590,12 +623,12 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private fun stopDailyAlarmSound() {
         dailyAlarmJob?.cancel()
         dailyAlarmJob = null
-        alarmTonePlayer.stop()
+        stopAlarmPlayback()
     }
 
     private fun startTimerAlert() {
         timerAlertJob?.cancel()
-        alarmTonePlayer.start()
+        startAlarmPlayback()
         showEdgeLight(EdgeLightMode.TIMER_ALERT, DAILY_ALARM_RING_MS)
         _uiState.update {
             it.copy(
@@ -614,7 +647,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private fun stopTimerAlertSound() {
         timerAlertJob?.cancel()
         timerAlertJob = null
-        alarmTonePlayer.stop()
+        stopAlarmPlayback()
     }
 
     fun isNetworkLocationFallbackAllowed(): Boolean =
@@ -1350,7 +1383,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
                     sleepSoundRemainingSeconds = (SLEEP_SOUND_DURATION_MS / 1000L).toInt()
                 )
             }
-            whiteNoisePlayer.start(_uiState.value.sleepSoundMode)
+            startSleepPlayback(_uiState.value.sleepSoundMode)
             startSleepSoundCountdown()
         } else {
             stopSleepSound(clearPersistedState = true)
@@ -1361,7 +1394,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     fun setSleepSoundMode(mode: SleepSoundMode) {
         _uiState.update { it.copy(sleepSoundMode = mode) }
         if (_uiState.value.whiteNoiseEnabled) {
-            whiteNoisePlayer.start(mode)
+            startSleepPlayback(mode)
         }
         persistSetting { this[PreferenceKeys.sleepSoundMode] = mode.name }
     }
@@ -1388,7 +1421,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         sleepSoundJob?.cancel()
         sleepSoundJob = null
         sleepSoundEndsAtElapsedMs = 0L
-        whiteNoisePlayer.stop()
+        stopSleepPlayback()
         _uiState.update { it.copy(whiteNoiseEnabled = false, sleepSoundRemainingSeconds = 0) }
         if (clearPersistedState) {
             persistSetting { this[PreferenceKeys.whiteNoise] = false }
@@ -1523,8 +1556,8 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         stopWeatherRefresh()
         mediaPlayer?.release()
         loudnessEnhancer?.release()
-        whiteNoisePlayer.stop()
-        alarmTonePlayer.stop()
+        stopSleepPlayback()
+        stopAlarmPlayback()
         mediaPlayer = null
         loudnessEnhancer = null
         super.onCleared()

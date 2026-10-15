@@ -4,25 +4,20 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
-import kotlin.concurrent.thread
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.PI
 import kotlin.math.sin
 
 class AlarmTonePlayer {
-    @Volatile
-    private var running = false
-    private var audioTrack: AudioTrack? = null
-    private var writerThread: Thread? = null
-
-    fun start() {
-        if (running) return
+    suspend fun play() = withContext(Dispatchers.IO) {
         val sampleRate = 22_050
         val minBuffer = AudioTrack.getMinBufferSize(
             sampleRate,
             AudioFormat.CHANNEL_OUT_MONO,
             AudioFormat.ENCODING_PCM_16BIT
         )
-        if (minBuffer <= 0) return
+        if (minBuffer <= 0) return@withContext
         val track = AudioTrack(
             AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_ALARM)
@@ -37,30 +32,20 @@ class AlarmTonePlayer {
             AudioTrack.MODE_STREAM,
             AudioManager.AUDIO_SESSION_ID_GENERATE
         )
-        audioTrack = track
-        running = true
-        track.play()
-        writerThread = thread(start = true, name = "daily-alarm-tone") {
+        try {
+            track.play()
             val buffer = ShortArray(1024)
             var sampleCursor = 0L
-            while (running) {
-                fillAlarmBuffer(buffer, sampleRate, sampleCursor)
-                sampleCursor += buffer.size
-                track.write(buffer, 0, buffer.size)
+            streamPcm(buffer, write = { samples, offset, size ->
+                track.write(samples, offset, size, AudioTrack.WRITE_NON_BLOCKING)
+            }) {
+                fillAlarmBuffer(it, sampleRate, sampleCursor)
+                sampleCursor += it.size
             }
+        } finally {
+            // Only this session touches/releases its track; cancellation cannot revive it.
+            try { track.stop() } finally { track.release() }
         }
-    }
-
-    fun stop() {
-        running = false
-        writerThread?.join(200)
-        writerThread = null
-        audioTrack?.runCatching {
-            pause()
-            flush()
-            release()
-        }
-        audioTrack = null
     }
 
     private fun fillAlarmBuffer(buffer: ShortArray, sampleRate: Int, startSample: Long) {

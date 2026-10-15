@@ -4,30 +4,21 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
-import kotlin.concurrent.thread
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.PI
 import kotlin.math.sin
 import kotlin.random.Random
 
 class WhiteNoisePlayer {
-    @Volatile
-    private var running = false
-    @Volatile
-    private var mode: SleepSoundMode = SleepSoundMode.RAIN
-    private var audioTrack: AudioTrack? = null
-    private var writerThread: Thread? = null
-
-    fun start(mode: SleepSoundMode = SleepSoundMode.RAIN) {
-        if (running && this.mode == mode) return
-        if (running) stop()
-        this.mode = mode
+    suspend fun play(mode: SleepSoundMode = SleepSoundMode.RAIN) = withContext(Dispatchers.IO) {
         val sampleRate = 22_050
         val minBuffer = AudioTrack.getMinBufferSize(
             sampleRate,
             AudioFormat.CHANNEL_OUT_MONO,
             AudioFormat.ENCODING_PCM_16BIT
         )
-        if (minBuffer <= 0) return
+        if (minBuffer <= 0) return@withContext
         val track = AudioTrack(
             AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -42,34 +33,24 @@ class WhiteNoisePlayer {
             AudioTrack.MODE_STREAM,
             AudioManager.AUDIO_SESSION_ID_GENERATE
         )
-        audioTrack = track
-        running = true
-        track.play()
-        writerThread = thread(start = true, name = "sleep-sound-writer") {
+        try {
+            track.play()
             val buffer = ShortArray(1024)
             val random = Random(System.nanoTime())
             val rainState = RainState()
             val warmNoiseState = WarmNoiseState()
-            while (running) {
-                when (this.mode) {
-                    SleepSoundMode.RAIN -> fillRainBuffer(buffer, random, sampleRate, rainState)
-                    SleepSoundMode.WHITE_NOISE -> fillWhiteNoiseBuffer(buffer, random, warmNoiseState)
+            streamPcm(buffer, write = { samples, offset, size ->
+                track.write(samples, offset, size, AudioTrack.WRITE_NON_BLOCKING)
+            }) {
+                when (mode) {
+                    SleepSoundMode.RAIN -> fillRainBuffer(it, random, sampleRate, rainState)
+                    SleepSoundMode.WHITE_NOISE -> fillWhiteNoiseBuffer(it, random, warmNoiseState)
                 }
-                track.write(buffer, 0, buffer.size)
             }
+        } finally {
+            // Only this session touches/releases its track; cancellation cannot revive it.
+            try { track.stop() } finally { track.release() }
         }
-    }
-
-    fun stop() {
-        running = false
-        writerThread?.join(200)
-        writerThread = null
-        audioTrack?.runCatching {
-            pause()
-            flush()
-            release()
-        }
-        audioTrack = null
     }
 
     private fun fillWhiteNoiseBuffer(buffer: ShortArray, random: Random, state: WarmNoiseState) {
