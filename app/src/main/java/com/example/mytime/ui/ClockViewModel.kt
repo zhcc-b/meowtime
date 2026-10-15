@@ -92,6 +92,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private val whiteNoisePlayer = WhiteNoisePlayer()
     private val alarmTonePlayer = AlarmTonePlayer()
     private var alarmPlaybackJob: Job? = null
+    private val alertSoundOwners = AlertSoundOwners(::startAlarmPlayback, ::stopAlarmPlayback)
     private var sleepPlaybackJob: Job? = null
     private var playingSleepMode: SleepSoundMode? = null
     private val appContext: Context
@@ -618,7 +619,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
 
     private fun startDailyAlarm() {
         dailyAlarmJob?.cancel()
-        startAlarmPlayback()
+        alertSoundOwners.acquire(AlertKind.DAILY)
         showEdgeLight(EdgeLightMode.TIMER_ALERT, DAILY_ALARM_RING_MS)
         _uiState.update {
             it.copy(
@@ -637,12 +638,12 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private fun stopDailyAlarmSound() {
         dailyAlarmJob?.cancel()
         dailyAlarmJob = null
-        stopAlarmPlayback()
+        alertSoundOwners.release(AlertKind.DAILY)
     }
 
     private fun startTimerAlert() {
         timerAlertJob?.cancel()
-        startAlarmPlayback()
+        alertSoundOwners.acquire(AlertKind.TIMER)
         showEdgeLight(EdgeLightMode.TIMER_ALERT, DAILY_ALARM_RING_MS)
         _uiState.update {
             it.copy(
@@ -661,7 +662,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
     private fun stopTimerAlertSound() {
         timerAlertJob?.cancel()
         timerAlertJob = null
-        stopAlarmPlayback()
+        alertSoundOwners.release(AlertKind.TIMER)
     }
 
     fun isNetworkLocationFallbackAllowed(): Boolean =
@@ -1571,6 +1572,7 @@ class ClockViewModel(application: Application) : AndroidViewModel(application), 
         mediaPlayer?.release()
         loudnessEnhancer?.release()
         stopSleepPlayback()
+        alertSoundOwners.clear()
         stopAlarmPlayback()
         mediaPlayer = null
         loudnessEnhancer = null
